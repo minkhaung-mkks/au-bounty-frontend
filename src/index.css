@@ -726,6 +726,21 @@ textarea.field {
   border-top: 1px solid var(--line-2);
 }
 
+/* Check-in code swapping in place when the 60s window rotates. */
+.code-swap {
+  animation: codeSwap 0.35s ease both;
+}
+@keyframes codeSwap {
+  from {
+    opacity: 0.2;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @media (max-width: 900px) {
   .sidebar {
     width: 76px;

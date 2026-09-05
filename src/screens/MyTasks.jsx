@@ -283,7 +283,7 @@ export function MyTasks() {
         {events.map(({ assignment, task }) => (
           <Link
             key={assignment.id}
-            to="/check-in"
+            to={`/check-in?event=${task.id}&mode=attendee`}
             className="card"
             style={{
               borderLeft: '3px solid var(--gold)',

@@ -1,15 +1,67 @@
+import { useEffect, useRef } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api.js'
 import { useApi } from '../lib/useApi.js'
+import { useSession } from '../session.jsx'
 import { useToast } from '../components/Toast.jsx'
-import { ErrorState, Icon, Loading } from '../components/ui.jsx'
-import { dateTime, rewardLabel } from '../lib/format.js'
+import { Avatar, ErrorState, Icon, Kicker, Loading } from '../components/ui.jsx'
+import { dateTime, relativeTime, rewardLabel, timeOnly } from '../lib/format.js'
+import { subscribe, unsubscribe, useSocketEvent } from '../lib/socket.js'
+
+/** Same prefix every fetch in api.js uses; this one is a plain link download. */
+const ICS_URL = (id) => `/aubounty/api/tasks/${id}/calendar.ics`
+
+/** Google's template wants 20260905T133000Z, i.e. UTC with the punctuation gone. */
+const utcStamp = (value) => new Date(value).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z'
+
+/**
+ * Client-side Google Calendar "add event" link from the event's own fields. No
+ * end time is stored anywhere, so the template assumes the classic one-hour
+ * slot. Returns null when there is no start to build on.
+ */
+function googleCalendarUrl(task) {
+  if (!task.startsAt) return null
+  const start = new Date(task.startsAt)
+  const end = new Date(start.getTime() + 60 * 60 * 1000)
+  const params = [
+    ['action', 'TEMPLATE'],
+    ['text', task.title],
+    ['dates', `${utcStamp(start)}/${utcStamp(end)}`],
+  ]
+  if (task.location?.name) params.push(['location', task.location.name])
+  const query = params.map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&')
+  return `https://calendar.google.com/calendar/render?${query}`
+}
+
+/** An event assignment was attended once its check-in landed. */
+const isCheckedIn = (assignment) =>
+  Boolean(assignment) && Boolean(assignment.checkedInAt || assignment.status === 'COMPLETED')
 
 export function EventDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const { me, orgs } = useSession()
   const { flash, flashError } = useToast()
   const { data, error, loading, reload } = useApi(() => api.get(`/tasks/${id}`), [id])
+
+  // Live seat and check-in changes. The task room only says "something about
+  // this task changed" (status/occupancy, no assignment detail), so the row
+  // refetches, debounced: a door takes many codes in quick succession.
+  const reloadTimer = useRef(null)
+  const reloadSoon = () => {
+    clearTimeout(reloadTimer.current)
+    reloadTimer.current = setTimeout(() => reload(), 400)
+  }
+  useEffect(() => () => clearTimeout(reloadTimer.current), [])
+
+  useEffect(() => {
+    subscribe({ taskId: id })
+    return () => unsubscribe({ taskId: id })
+  }, [id])
+
+  useSocketEvent('task:updated', (payload) => {
+    if (payload?.taskId === id) reloadSoon()
+  })
 
   if (loading) return <Loading label="Loading event" />
   if (error) return <ErrorState error={error} onRetry={reload} />
@@ -19,6 +71,18 @@ export function EventDetail() {
   const pct = Math.min(100, Math.round((reserved / task.maxTakers) * 100))
   const mine = task.myAssignment
   const going = mine && !['WITHDRAWN', 'REJECTED'].includes(mine.status)
+  const myCheckedIn = isCheckedIn(mine)
+
+  // Who may open the organizer view: the poster, the sponsoring org, teachers
+  // and admins. Exactly the access the checkin-code endpoint enforces.
+  const canShowCode =
+    task.isMine ||
+    Boolean(task.org && orgs.some((o) => o.id === task.org.id)) ||
+    me?.role === 'TEACHER' ||
+    me?.role === 'ADMIN'
+
+  const attendees = task.assignments ?? []
+  const checkedInCount = attendees.filter((a) => isCheckedIn(a)).length
 
   const rsvp = async () => {
     try {
@@ -39,6 +103,8 @@ export function EventDetail() {
       flashError(err)
     }
   }
+
+  const calendarUrl = googleCalendarUrl(task)
 
   return (
     <div style={{ maxWidth: 1180, display: 'flex', flexDirection: 'column', gap: 22 }}>
@@ -103,25 +169,49 @@ export function EventDetail() {
             </div>
           </div>
 
-          {task.isMine ? (
-            <div
-              style={{
-                border: '1px solid var(--gold)',
-                padding: 15,
-                textAlign: 'center',
-                fontSize: 13,
-                fontWeight: 700,
-                color: 'var(--gold-light)',
-              }}
-            >
-              You are the organizer
+          {canShowCode ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+              {task.isMine ? (
+                <div
+                  style={{
+                    border: '1px solid var(--gold)',
+                    padding: 15,
+                    textAlign: 'center',
+                    fontSize: 13,
+                    fontWeight: 700,
+                    color: 'var(--gold-light)',
+                  }}
+                >
+                  You are the organizer
+                </div>
+              ) : null}
+              <Link className="btn btn-bone btn-block" to={`/check-in?event=${task.id}&mode=organizer`}>
+                <Icon name="qr_code_2" size={19} color="var(--red)" />
+                Show check-in code
+              </Link>
             </div>
           ) : going ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-              <Link className="btn btn-bone btn-block" to="/check-in">
-                <Icon name="qr_code_2" size={19} color="var(--red)" />
-                Open check-in
-              </Link>
+              {myCheckedIn ? (
+                <div
+                  style={{
+                    border: '1px solid var(--gold)',
+                    padding: 15,
+                    textAlign: 'center',
+                    fontSize: 13,
+                    fontWeight: 700,
+                    color: 'var(--gold-light)',
+                  }}
+                >
+                  <Icon name="check_circle" size={17} color="var(--green)" /> Checked in
+                  {mine.checkedInAt ? ` ${timeOnly(mine.checkedInAt)}` : ''}
+                </div>
+              ) : (
+                <Link className="btn btn-bone btn-block" to={`/check-in?event=${task.id}&mode=attendee`}>
+                  <Icon name="qr_code_2" size={19} color="var(--red)" />
+                  Check in at the venue
+                </Link>
+              )}
               <button className="btn btn-outline-dark btn-block" onClick={cancelSeat}>
                 Release my seat
               </button>
@@ -132,9 +222,25 @@ export function EventDetail() {
             </button>
           )}
 
-          <button className="btn btn-outline-dark btn-block" disabled title="Not wired in v0.5">
-            Add to calendar
-          </button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div className="label" style={{ marginBottom: 0 }}>
+              ADD TO CALENDAR
+            </div>
+            <a
+              className="btn btn-outline-dark btn-block"
+              href={ICS_URL(task.id)}
+              download={`aubounty-${task.id}.ics`}
+            >
+              <Icon name="download" size={17} color="var(--gold)" />
+              Download .ics
+            </a>
+            {calendarUrl ? (
+              <a className="btn btn-outline-dark btn-block" href={calendarUrl} target="_blank" rel="noreferrer">
+                <Icon name="event" size={17} color="var(--gold)" />
+                Google Calendar
+              </a>
+            ) : null}
+          </div>
         </div>
       </div>
 
@@ -159,6 +265,62 @@ export function EventDetail() {
           attendees one by one would be meaningless.
         </div>
       </div>
+
+      {/* Only the poster (and admins) get attendee identities from the API, so
+          the list appears exactly when the payload carries it. */}
+      {attendees.length ? (
+        <div className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <Kicker>ATTENDEES</Kicker>
+            <span style={{ fontSize: 12, color: 'var(--muted-2)' }}>
+              {checkedInCount} of {attendees.length} checked in
+            </span>
+          </div>
+          {attendees.map((a) => (
+            <div
+              key={a.id}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 14,
+                padding: '13px 0',
+                borderBottom: '1px solid var(--line-3)',
+                flexWrap: 'wrap',
+              }}
+            >
+              <Avatar name={a.taker.name} />
+              <div style={{ flex: 1, minWidth: 160 }}>
+                <div style={{ fontSize: 14.5, fontWeight: 700 }}>
+                  <Link to={`/u/${a.taker.id}`}>{a.taker.name}</Link>
+                </div>
+                <div style={{ fontSize: 12.5, color: 'var(--muted-2)', marginTop: 2 }}>
+                  {a.taker.role} · reserved {relativeTime(a.appliedAt)}
+                </div>
+              </div>
+              {isCheckedIn(a) ? (
+                <span
+                  title={a.checkedInAt ? dateTime(a.checkedInAt) : undefined}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: 'var(--green)',
+                    background: 'var(--bone-2)',
+                    padding: '5px 9px',
+                  }}
+                >
+                  <Icon name="check_circle" size={15} color="var(--green)" />
+                  Checked in{a.checkedInAt ? ` ${timeOnly(a.checkedInAt)}` : ''}
+                </span>
+              ) : (
+                <span className="chip">Not checked in</span>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : null}
     </div>
   )
 }
