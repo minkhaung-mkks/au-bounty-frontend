@@ -81,7 +81,7 @@ export function Create() {
       if (form.deadline) body.deadline = new Date(form.deadline).toISOString()
 
       const { task } = await api.post('/tasks', body)
-      flash('Posted. Students whose profile tags match see it first.')
+      flash('Posted. Attach files from its page if the task needs them.')
       navigate(task.type === 'EVENT' ? `/events/${task.id}` : `/tasks/${task.id}`)
     } catch (err) {
       flashError(err)
@@ -351,6 +351,10 @@ export function Create() {
           <div className="note-quiet">
             Students whose profile tags overlap with these see the card ranked first on their
             Matches tab.
+          </div>
+          <div className="note-quiet">
+            Files attach after posting: the landing page has an "Attach a file" control, since an
+            upload needs the post to exist first.
           </div>
         </div>
       </div>

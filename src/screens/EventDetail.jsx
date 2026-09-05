@@ -7,6 +7,8 @@ import { useToast } from '../components/Toast.jsx'
 import { Avatar, ErrorState, Icon, Kicker, Loading } from '../components/ui.jsx'
 import { dateTime, relativeTime, rewardLabel, timeOnly } from '../lib/format.js'
 import { subscribe, unsubscribe, useSocketEvent } from '../lib/socket.js'
+import { AttachButton, AttachmentChips, UploadRow } from '../components/Attachments.jsx'
+import { uploadFile, uploadRejection } from '../lib/uploads.js'
 
 /** Google's template wants 20260905T133000Z, i.e. UTC with the punctuation gone. */
 const utcStamp = (value) => new Date(value).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z'
@@ -41,6 +43,13 @@ export function EventDetail() {
   const { flash, flashError } = useToast()
   const { data, error, loading, reload } = useApi(() => api.get(`/tasks/${id}`), [id])
   const [downloading, setDownloading] = useState(false)
+
+  // Attachments and their in-flight uploads; local patches between fetches.
+  const [atts, setAtts] = useState(null)
+  const [uploads, setUploads] = useState([])
+  useEffect(() => {
+    setAtts(data?.task?.attachments ?? null)
+  }, [data])
 
   // Live seat and check-in changes. The task room only says "something about
   // this task changed" (status/occupancy, no assignment detail), so the row
@@ -78,6 +87,50 @@ export function EventDetail() {
     task.isMine ||
     me?.role === 'ADMIN' ||
     Boolean(task.org && orgs.some((o) => o.id === task.org.id))
+
+  // File attachments follow the task rule, not the check-in rule: poster or
+  // admin, which is exactly what the presign route enforces.
+  const canManageFiles = task.isMine || me?.role === 'ADMIN'
+  const attachments = atts ?? task.attachments ?? []
+
+  const runUpload = (row) => {
+    setUploads((u) => u.map((x) => (x.key === row.key ? { ...x, error: null, progress: 0 } : x)))
+    uploadFile({
+      file: row.file,
+      taskId: task.id,
+      onProgress: (p) =>
+        setUploads((u) => u.map((x) => (x.key === row.key ? { ...x, progress: p } : x))),
+    })
+      .then((attachment) => {
+        setUploads((u) => u.filter((x) => x.key !== row.key))
+        setAtts((a) => [...(a ?? []), attachment])
+        flash(`${attachment.fileName} attached.`)
+      })
+      .catch((err) => {
+        setUploads((u) =>
+          u.map((x) => (x.key === row.key ? { ...x, error: err?.message || 'Upload failed.' } : x)),
+        )
+        flashError(err)
+      })
+  }
+
+  const attachFiles = (files) => {
+    for (const file of files) {
+      const rejection = uploadRejection(file)
+      if (rejection) {
+        flash(rejection, 'error')
+        continue
+      }
+      const row = { key: crypto.randomUUID(), file, progress: 0, error: null }
+      setUploads((u) => [...u, row])
+      runUpload(row)
+    }
+  }
+
+  const deleteAttachment = async (attachment) => {
+    await api.del(`/files/${attachment.id}`)
+    setAtts((a) => (a ?? []).filter((x) => x.id !== attachment.id))
+  }
 
   const attendees = task.assignments ?? []
   const checkedInCount = attendees.filter((a) => isCheckedIn(a)).length
@@ -258,21 +311,58 @@ export function EventDetail() {
       </div>
 
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-        <div
-          className="card"
-          style={{ flex: '1 1 380px', padding: 24, display: 'flex', alignItems: 'center', gap: 14 }}
-        >
-          <Icon name="picture_as_pdf" size={26} color="var(--red)" />
-          <div style={{ flex: 1 }}>
-            <div style={{ fontFamily: 'var(--display)', fontWeight: 700, fontSize: 15 }}>
-              event-poster.pdf
+        {canManageFiles || attachments.length ? (
+          <div
+            className="card"
+            style={{
+              flex: '1 1 380px',
+              padding: 24,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 14,
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 12,
+                flexWrap: 'wrap',
+              }}
+            >
+              <Kicker>ATTACHMENTS</Kicker>
+              {canManageFiles ? (
+                <AttachButton
+                  onPicked={attachFiles}
+                  disabled={uploads.some((u) => !u.error)}
+                  label={uploads.some((u) => !u.error) ? 'Uploading…' : 'Attach a file'}
+                />
+              ) : null}
             </div>
-            <div style={{ fontSize: 12.5, color: 'var(--muted-2)', marginTop: 2 }}>
-              Placeholder. File attachments need the S3 bucket, which is not wired in v0.5.
-            </div>
+            {attachments.length ? (
+              <AttachmentChips
+                attachments={attachments}
+                onDelete={canManageFiles ? deleteAttachment : undefined}
+              />
+            ) : (
+              <div style={{ fontSize: 13, color: 'var(--muted-2)' }}>
+                No poster or handout attached yet. PDF, image, text or DOCX files up to 10 MB each.
+              </div>
+            )}
+            {uploads.map((row) => (
+              <UploadRow
+                key={row.key}
+                name={row.file.name}
+                size={row.file.size}
+                progress={row.progress}
+                error={row.error}
+                onRetry={() => runUpload(row)}
+                onRemove={() => setUploads((u) => u.filter((x) => x.key !== row.key))}
+              />
+            ))}
           </div>
-          <Icon name="download" size={21} color="var(--muted-4)" />
-        </div>
+        ) : null}
         <div className="note" style={{ flex: '1 1 380px', padding: 24, fontSize: 14 }}>
           Events skip reviews. Attendance verification is the only check. Rating 200 keynote
           attendees one by one would be meaningless.

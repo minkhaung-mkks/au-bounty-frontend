@@ -7,6 +7,8 @@ import { useSession } from '../session.jsx'
 import { Avatar, ErrorState, Icon, Kicker, Loading } from '../components/ui.jsx'
 import { STATUS_LABEL, TYPE_CLASS, dateTime, relativeTime, rewardLabel, spotsLabel } from '../lib/format.js'
 import { subscribe, unsubscribe, useSocketEvent } from '../lib/socket.js'
+import { AttachButton, AttachmentChips, UploadRow } from '../components/Attachments.jsx'
+import { uploadFile, uploadRejection } from '../lib/uploads.js'
 
 export function TaskDetail() {
   const { id } = useParams()
@@ -18,6 +20,11 @@ export function TaskDetail() {
   // Live status/occupancy from the task room, patched onto the loaded row.
   const [live, setLive] = useState(null)
   const lastStatusRef = useRef(null)
+
+  // Attachments: kept apart from `live` so a local patch after upload/delete is
+  // reconciled by the next task fetch instead of shadowing it forever.
+  const [atts, setAtts] = useState(null)
+  const [uploads, setUploads] = useState([])
 
   useEffect(() => {
     setLive(null)
@@ -42,6 +49,12 @@ export function TaskDetail() {
     if (data?.task && !live) lastStatusRef.current = data.task.status
   }, [data, live])
 
+  // Every fresh payload is the server's truth about attachments; mutations
+  // patch locally in between so a chip appears the moment its bytes land.
+  useEffect(() => {
+    setAtts(data?.task?.attachments ?? null)
+  }, [data])
+
   if (loading) return <Loading label="Loading task" />
   if (error) return <ErrorState error={error} onRetry={reload} />
   // Events have their own screen: seats and check-in instead of apply and review.
@@ -60,6 +73,53 @@ export function TaskDetail() {
 
   const mine = task.myAssignment
   const applicants = task.assignments ?? []
+
+  // The server lets the poster and admins attach to and remove from a task.
+  const canManageFiles = task.isMine || me?.role === 'ADMIN'
+  const attachments = atts ?? task.attachments ?? []
+
+  // One file's presign-then-PUT. Failures stay as a row with a Retry; the
+  // toast carries the same reason for anyone who missed the row.
+  const runUpload = (row) => {
+    setUploads((u) => u.map((x) => (x.key === row.key ? { ...x, error: null, progress: 0 } : x)))
+    uploadFile({
+      file: row.file,
+      taskId: task.id,
+      onProgress: (p) =>
+        setUploads((u) => u.map((x) => (x.key === row.key ? { ...x, progress: p } : x))),
+    })
+      .then((attachment) => {
+        setUploads((u) => u.filter((x) => x.key !== row.key))
+        setAtts((a) => [...(a ?? []), attachment])
+        flash(`${attachment.fileName} attached.`)
+      })
+      .catch((err) => {
+        setUploads((u) =>
+          u.map((x) => (x.key === row.key ? { ...x, error: err?.message || 'Upload failed.' } : x)),
+        )
+        flashError(err)
+      })
+  }
+
+  const attachFiles = (files) => {
+    for (const file of files) {
+      // Client-side mirror of the API's allowlist and size cap: friendly words
+      // now instead of a 400 after the user has waited.
+      const rejection = uploadRejection(file)
+      if (rejection) {
+        flash(rejection, 'error')
+        continue
+      }
+      const row = { key: crypto.randomUUID(), file, progress: 0, error: null }
+      setUploads((u) => [...u, row])
+      runUpload(row)
+    }
+  }
+
+  const deleteAttachment = async (attachment) => {
+    await api.del(`/files/${attachment.id}`)
+    setAtts((a) => (a ?? []).filter((x) => x.id !== attachment.id))
+  }
 
   return (
     <div style={{ maxWidth: 1180, display: 'flex', flexDirection: 'column', gap: 22 }}>
@@ -156,6 +216,50 @@ export function TaskDetail() {
               </div>
             </div>
           </div>
+
+          {canManageFiles || attachments.length ? (
+            <div className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: 12,
+                  flexWrap: 'wrap',
+                }}
+              >
+                <Kicker>ATTACHMENTS</Kicker>
+                {canManageFiles ? (
+                  <AttachButton
+                    onPicked={attachFiles}
+                    disabled={uploads.some((u) => !u.error)}
+                    label={uploads.some((u) => !u.error) ? 'Uploading…' : 'Attach a file'}
+                  />
+                ) : null}
+              </div>
+              {attachments.length ? (
+                <AttachmentChips
+                  attachments={attachments}
+                  onDelete={canManageFiles ? deleteAttachment : undefined}
+                />
+              ) : (
+                <div style={{ fontSize: 13, color: 'var(--muted-2)' }}>
+                  Nothing attached yet. PDF, image, text or DOCX files up to 10 MB each.
+                </div>
+              )}
+              {uploads.map((row) => (
+                <UploadRow
+                  key={row.key}
+                  name={row.file.name}
+                  size={row.file.size}
+                  progress={row.progress}
+                  error={row.error}
+                  onRetry={() => runUpload(row)}
+                  onRemove={() => setUploads((u) => u.filter((x) => x.key !== row.key))}
+                />
+              ))}
+            </div>
+          ) : null}
 
           {task.isMine && applicants.length ? (
             <div className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>

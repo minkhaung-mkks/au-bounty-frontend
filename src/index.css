@@ -796,3 +796,114 @@ textarea.field {
     animation: none;
   }
 }
+
+/* ---------------------------------------------------------- attachments */
+
+/* One uploaded file as a chip: icon by mime, name, size, download, remove. */
+.attach-wrap {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 5px;
+  max-width: 100%;
+}
+.attach-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.attach-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #fff;
+  border: 1px solid var(--line);
+  padding: 7px 10px;
+  max-width: 330px;
+  font-size: 12.5px;
+}
+.attach-chip .ms {
+  flex: 0 0 auto;
+}
+.attach-name {
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.attach-size {
+  font-size: 11px;
+  color: var(--muted-2);
+  flex: 0 0 auto;
+}
+.attach-act {
+  border: 0;
+  background: none;
+  padding: 2px;
+  cursor: pointer;
+  color: var(--muted-2);
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+.attach-act:hover {
+  color: var(--red);
+}
+.attach-act:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+/* Chips that sit on the sender's red message bubble. */
+.attach-chip.on-red {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.4);
+  color: #fff;
+}
+.attach-chip.on-red .attach-size {
+  color: var(--red-soft-2);
+}
+.attach-chip.on-red .attach-act {
+  color: var(--red-soft-2);
+}
+.attach-chip.on-red .attach-act:hover {
+  color: #fff;
+}
+/* The remove confirm under a chip. */
+.attach-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.attach-confirm .btn {
+  padding: 6px 11px;
+  font-size: 12px;
+}
+
+/* One upload in flight or failed: name, thin bar (or reason), retry. */
+.attach-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line);
+  background: #fff;
+  padding: 10px 12px;
+  max-width: 360px;
+}
+.attach-row .attach-error {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--red-dark);
+  line-height: 1.45;
+}
+.attach-bar {
+  height: 3px;
+  background: var(--line-2);
+  margin-top: 7px;
+}
+.attach-bar-fill {
+  height: 100%;
+  background: var(--red);
+  transition: width 0.15s ease;
+}

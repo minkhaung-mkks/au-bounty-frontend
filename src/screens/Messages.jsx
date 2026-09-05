@@ -7,6 +7,8 @@ import { Avatar, Empty, ErrorState, Icon, Kicker, Loading } from '../components/
 import { subscribe, unsubscribe, useSocketEvent } from '../lib/socket.js'
 import { threadsStore, useThreads } from '../lib/threads.js'
 import { TYPE_CLASS, relativeTime, timeOnly } from '../lib/format.js'
+import { AttachButton, AttachmentChips, UploadRow } from '../components/Attachments.jsx'
+import { attachmentIcon, effectiveMime, formatBytes, uploadFile, uploadRejection } from '../lib/uploads.js'
 
 const MAX_LEN = 4000
 
@@ -72,7 +74,7 @@ const byTime = (a, b) =>
  * socket down.
  */
 function ThreadPane({ thread, me }) {
-  const { flashError } = useToast()
+  const { flash, flashError } = useToast()
   const assignmentId = thread.assignmentId
 
   const [messages, setMessages] = useState(null)
@@ -82,12 +84,17 @@ function ThreadPane({ thread, me }) {
   const [reloadKey, setReloadKey] = useState(0)
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
+  // Files staged on the composer; they ride along with the next sent message.
+  const [pending, setPending] = useState([])
 
   const scrollRef = useRef(null)
   const pinnedRef = useRef(true)
   const anchorRef = useRef(null)
   const pendingRef = useRef([])
   const unreadIncomingRef = useRef(false)
+  // Per message: how many of the files it was sent with have landed/failed,
+  // so a partial failure can be reported without reading state mid-update.
+  const fileLedger = useRef({})
 
   // Membership in the thread room for as long as this pane is mounted.
   useEffect(() => {
@@ -173,6 +180,8 @@ function ThreadPane({ thread, me }) {
 
   // The 201 response is applied directly; the socket echo of the same message
   // just merges over it, and the REST path keeps the screen usable offline-ish.
+  // Attachments come after: the message must exist before a file can presign
+  // against its id, so files leave with the bubble already on screen.
   const send = async (e) => {
     e.preventDefault()
     const content = draft.trim()
@@ -189,11 +198,91 @@ function ThreadPane({ thread, me }) {
         createdAt: msg?.createdAt ?? new Date().toISOString(),
         senderId: me.id,
       })
+      const files = pending
+      setPending([])
+      if (files.length) startUploads(msg.id, files)
     } catch (err) {
       flashError(err)
     } finally {
       setSending(false)
     }
+  }
+
+  /** Patches one message row in place, whatever else is merging around it. */
+  const patchMessage = (id, fn) =>
+    setMessages((prev) => (prev ? prev.map((m) => (m.id === id ? fn(m) : m)) : prev))
+
+  const runMessageUpload = (messageId, item) => {
+    // A retry after this pane remounted has no ledger to update; count it anyway.
+    fileLedger.current[messageId] ??= { done: 0, failed: 0, total: 1 }
+    patchMessage(messageId, (m) => ({
+      ...m,
+      failedUploads: (m.failedUploads ?? []).filter((f) => f.key !== item.key),
+      uploading: [...(m.uploading ?? []), { key: item.key, file: item.file, progress: 0 }],
+    }))
+    uploadFile({
+      file: item.file,
+      messageId,
+      onProgress: (p) =>
+        patchMessage(messageId, (m) => ({
+          ...m,
+          uploading: (m.uploading ?? []).map((x) =>
+            x.key === item.key ? { ...x, progress: p } : x,
+          ),
+        })),
+    })
+      .then((attachment) => {
+        fileLedger.current[messageId].done += 1
+        patchMessage(messageId, (m) => ({
+          ...m,
+          uploading: (m.uploading ?? []).filter((x) => x.key !== item.key),
+          attachments: [...(m.attachments ?? []), attachment],
+        }))
+      })
+      .catch((err) => {
+        const ledger = fileLedger.current[messageId]
+        ledger.failed += 1
+        patchMessage(messageId, (m) => ({
+          ...m,
+          uploading: (m.uploading ?? []).filter((x) => x.key !== item.key),
+          failedUploads: [
+            ...(m.failedUploads ?? []),
+            { key: item.key, file: item.file, error: err?.message || 'Upload failed.' },
+          ],
+        }))
+        // Partial-failure honesty: the message itself is already delivered,
+        // so the toast counts what made it rather than crying "not sent".
+        flash(
+          `Message sent; ${ledger.done} of ${ledger.total} files uploaded. Retry from the bubble.`,
+          'error',
+        )
+      })
+  }
+
+  const startUploads = (messageId, files) => {
+    fileLedger.current[messageId] = { done: 0, failed: 0, total: files.length }
+    for (const item of files) runMessageUpload(messageId, item)
+  }
+
+  const dismissFailed = (messageId, key) =>
+    patchMessage(messageId, (m) => ({
+      ...m,
+      failedUploads: (m.failedUploads ?? []).filter((f) => f.key !== key),
+    }))
+
+  // Files land on the composer as chips; anything the API would refuse is
+  // turned away immediately with the reason, before it is attached to a send.
+  const pickFiles = (files) => {
+    const accepted = []
+    for (const file of files) {
+      const rejection = uploadRejection(file)
+      if (rejection) {
+        flash(rejection, 'error')
+        continue
+      }
+      accepted.push({ key: crypto.randomUUID(), file })
+    }
+    if (accepted.length) setPending((p) => [...p, ...accepted])
   }
 
   // Live delivery: the room gets the full message for both sides.
@@ -315,6 +404,10 @@ function ThreadPane({ thread, me }) {
           ) : null}
           {messages.map((m) => {
             const mine = m.senderId === me.id
+            const flight = [
+              ...(m.uploading ?? []),
+              ...(m.failedUploads ?? []),
+            ]
             return (
               <div
                 key={m.id}
@@ -333,6 +426,34 @@ function ThreadPane({ thread, me }) {
                 }}
               >
                 {m.content}
+                {m.attachments?.length ? (
+                  <div style={{ marginTop: 8 }}>
+                    <AttachmentChips attachments={m.attachments} onRed={mine} />
+                  </div>
+                ) : null}
+                {flight.length ? (
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 7,
+                      alignItems: mine ? 'flex-end' : 'flex-start',
+                      marginTop: 8,
+                    }}
+                  >
+                    {flight.map((x) => (
+                      <UploadRow
+                        key={x.key}
+                        name={x.file.name}
+                        size={x.file.size}
+                        progress={x.progress}
+                        error={x.error}
+                        onRetry={x.error ? () => runMessageUpload(m.id, x) : undefined}
+                        onRemove={x.error ? () => dismissFailed(m.id, x.key) : undefined}
+                      />
+                    ))}
+                  </div>
+                ) : null}
                 <div
                   style={{
                     fontSize: 11,
@@ -365,28 +486,67 @@ function ThreadPane({ thread, me }) {
           padding: '16px 20px',
           borderTop: '1px solid var(--line)',
           display: 'flex',
-          alignItems: 'center',
-          gap: 11,
+          flexDirection: 'column',
+          gap: 10,
         }}
       >
-        <input
-          className="field"
-          placeholder={`Message ${counterpart.split(' ')[0]}`}
-          style={{ flex: 1 }}
-          value={draft}
-          maxLength={MAX_LEN}
-          onChange={(e) => setDraft(e.target.value)}
-          disabled={Boolean(error)}
-          aria-label="Message"
-        />
-        {draft.length > MAX_LEN - 200 ? (
-          <span style={{ fontSize: 11, color: 'var(--muted-3)' }}>
-            {draft.length}/{MAX_LEN}
-          </span>
+        {pending.length ? (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+            {pending.map((p) => (
+              <span key={p.key} className="attach-chip">
+                <Icon
+                  name={attachmentIcon(effectiveMime(p.file))}
+                  size={16}
+                  color="var(--red)"
+                />
+                <span className="attach-name" title={p.file.name}>
+                  {p.file.name}
+                </span>
+                <span className="attach-size">{formatBytes(p.file.size)}</span>
+                <button
+                  type="button"
+                  className="attach-act"
+                  onClick={() => setPending((x) => x.filter((y) => y.key !== p.key))}
+                  title="Remove"
+                  aria-label={`Remove ${p.file.name}`}
+                >
+                  <Icon name="close" size={16} />
+                </button>
+              </span>
+            ))}
+            <span style={{ fontSize: 11.5, color: 'var(--muted-3)' }}>
+              Sends with your next message
+            </span>
+          </div>
         ) : null}
-        <button className="btn btn-primary btn-sm" disabled={!draft.trim() || sending || Boolean(error)}>
-          {sending ? 'Sending…' : 'Send'}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
+          <input
+            className="field"
+            placeholder={`Message ${counterpart.split(' ')[0]}`}
+            style={{ flex: 1 }}
+            value={draft}
+            maxLength={MAX_LEN}
+            onChange={(e) => setDraft(e.target.value)}
+            disabled={Boolean(error)}
+            aria-label="Message"
+          />
+          {draft.length > MAX_LEN - 200 ? (
+            <span style={{ fontSize: 11, color: 'var(--muted-3)' }}>
+              {draft.length}/{MAX_LEN}
+            </span>
+          ) : null}
+          <AttachButton
+            onPicked={pickFiles}
+            label="Attach"
+            disabled={Boolean(error)}
+          />
+          <button
+            className="btn btn-primary btn-sm"
+            disabled={!draft.trim() || sending || Boolean(error)}
+          >
+            {sending ? 'Sending…' : 'Send'}
+          </button>
+        </div>
       </form>
     </div>
   )
