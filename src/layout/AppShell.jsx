@@ -25,8 +25,30 @@ export function AppShell({ children }) {
   const onBoard = location.pathname === '/'
   const [query, setQuery] = useState(searchParams.get('q') ?? '')
   const [mineCount, setMineCount] = useState(0)
+  const [weather, setWeather] = useState(null)
   const { threads } = useThreads()
   const unreadCount = totalUnread(threads)
+
+  // D11 weather chip: Open-Meteo via the server, which caches for 10 minutes —
+  // the client re-asks on the same cadence. Any failure keeps the last good
+  // reading; only a failure before the first success falls back to the static
+  // placeholder text.
+  useEffect(() => {
+    let cancelled = false
+    const load = () =>
+      api
+        .get('/weather')
+        .then((d) => {
+          if (!cancelled) setWeather(d)
+        })
+        .catch(() => {})
+    load()
+    const timer = setInterval(load, 10 * 60 * 1000)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+  }, [])
 
   // One socket while signed in; the cookie (or dev handshake header) identifies it.
   useSocketSession(me.id)
@@ -216,19 +238,35 @@ export function AppShell({ children }) {
             ) : null}
           </form>
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 18 }}>
-            <span
-              title="Static placeholder. The Open-Meteo call is not wired in v0.5."
-              style={{
-                fontSize: 12.5,
-                color: 'var(--muted)',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 7,
-              }}
-            >
-              <Icon name="rainy" size={18} color="var(--gold)" />
-              31° Bang Na
-            </span>
+            {weather ? (
+              <span
+                title={`Live campus weather · ${weather.label} · refreshed every 10 minutes`}
+                style={{
+                  fontSize: 12.5,
+                  color: 'var(--muted)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 7,
+                }}
+              >
+                <Icon name="rainy" size={18} color="var(--gold)" />
+                {Math.round(weather.temperatureC)}° {weather.label} · {weather.locationLabel}
+              </span>
+            ) : (
+              <span
+                title="Static placeholder. Live weather is unavailable right now."
+                style={{
+                  fontSize: 12.5,
+                  color: 'var(--muted)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 7,
+                }}
+              >
+                <Icon name="rainy" size={18} color="var(--gold)" />
+                31° Bang Na
+              </span>
+            )}
             <button
               className="btn"
               style={{ padding: 0 }}

@@ -8,6 +8,8 @@ import { Avatar, ErrorState, Icon, Kicker, Loading } from '../components/ui.jsx'
 import { dateTime, relativeTime, rewardLabel, timeOnly } from '../lib/format.js'
 import { subscribe, unsubscribe, useSocketEvent } from '../lib/socket.js'
 import { AttachButton, AttachmentChips, UploadRow } from '../components/Attachments.jsx'
+import { LocationMap } from '../components/LocationMap.jsx'
+import { TranslatePanel } from '../components/TranslatePanel.jsx'
 import { uploadFile, uploadRejection } from '../lib/uploads.js'
 
 /** Google's template wants 20260905T133000Z, i.e. UTC with the punctuation gone. */
@@ -39,7 +41,7 @@ const isCheckedIn = (assignment) =>
 export function EventDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { me, orgs } = useSession()
+  const { me, orgs, capabilities } = useSession()
   const { flash, flashError } = useToast()
   const { data, error, loading, reload } = useApi(() => api.get(`/tasks/${id}`), [id])
   const [downloading, setDownloading] = useState(false)
@@ -311,6 +313,19 @@ export function EventDetail() {
       </div>
 
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+        <div className="card" style={{ flex: '1 1 380px' }}>
+          <LocationMap location={task.location} />
+        </div>
+        {capabilities.translation ? (
+          <div style={{ flex: '1 1 380px' }}>
+            <TranslatePanel
+              key={task.id}
+              taskId={task.id}
+              title={task.title}
+              content={task.content}
+            />
+          </div>
+        ) : null}
         {canManageFiles || attachments.length ? (
           <div
             className="card"

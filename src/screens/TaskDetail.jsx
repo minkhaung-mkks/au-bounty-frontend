@@ -8,13 +8,15 @@ import { Avatar, ErrorState, Icon, Kicker, Loading } from '../components/ui.jsx'
 import { STATUS_LABEL, TYPE_CLASS, dateTime, relativeTime, rewardLabel, spotsLabel } from '../lib/format.js'
 import { subscribe, unsubscribe, useSocketEvent } from '../lib/socket.js'
 import { AttachButton, AttachmentChips, UploadRow } from '../components/Attachments.jsx'
+import { LocationMap } from '../components/LocationMap.jsx'
+import { TranslatePanel } from '../components/TranslatePanel.jsx'
 import { uploadFile, uploadRejection } from '../lib/uploads.js'
 
 export function TaskDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
   const { flash, flashError } = useToast()
-  const { me } = useSession()
+  const { me, capabilities } = useSession()
   const { data, error, loading, reload } = useApi(() => api.get(`/tasks/${id}`), [id])
 
   // Live status/occupancy from the task room, patched onto the loaded row.
@@ -190,31 +192,7 @@ export function TaskDetail() {
           </div>
 
           <div className="card">
-            <div className="map-fake">
-              <Icon name="location_on" size={46} color="var(--red)" />
-              <span className="tag">Placeholder map · Google Geocoding not wired in v0.5</span>
-            </div>
-            <div
-              style={{
-                padding: '20px 24px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 16,
-                flexWrap: 'wrap',
-              }}
-            >
-              <div>
-                <div style={{ fontFamily: 'var(--display)', fontWeight: 700, fontSize: 16 }}>
-                  {task.location.name}
-                </div>
-                <div style={{ fontSize: 12.5, color: 'var(--muted-2)', marginTop: 3 }}>
-                  {task.location.lat != null
-                    ? `${task.location.lat}, ${task.location.lng}`
-                    : 'No coordinates stored yet'}
-                </div>
-              </div>
-            </div>
+            <LocationMap location={task.location} />
           </div>
 
           {canManageFiles || attachments.length ? (
@@ -458,6 +436,15 @@ export function TaskDetail() {
               days.
             </div>
           </div>
+
+          {capabilities.translation ? (
+            <TranslatePanel
+              key={task.id}
+              taskId={task.id}
+              title={task.title}
+              content={task.content}
+            />
+          ) : null}
 
           {me?.role === 'ADMIN' && !task.isMine ? (
             <div className="note-quiet">
