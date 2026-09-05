@@ -15,7 +15,7 @@ const NAV = [
 ]
 
 export function AppShell({ children }) {
-  const { me, orgs, signOut } = useSession()
+  const { me, orgs, signOut, devAuth } = useSession()
   const navigate = useNavigate()
   const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -161,8 +161,8 @@ export function AppShell({ children }) {
               navigate('/login')
             }}
           >
-            <Icon name="swap_horiz" size={17} color="var(--gold)" />
-            Switch user
+            <Icon name={devAuth ? 'swap_horiz' : 'logout'} size={17} color="var(--gold)" />
+            {devAuth ? 'Switch user' : 'Sign out'}
           </button>
         </div>
       </aside>

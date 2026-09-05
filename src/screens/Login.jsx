@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { api } from '../api.js'
 import { useApi } from '../lib/useApi.js'
 import { useSession } from '../session.jsx'
@@ -10,10 +10,39 @@ const TRUST = [
   ['qr_code_2', 'QR-verified attendance'],
 ]
 
+/** The four-square Microsoft mark, drawn in CSS so no dependency or asset is needed. */
+const MicrosoftMark = ({ size = 18 }) => (
+  <span
+    style={{
+      display: 'inline-grid',
+      gridTemplateColumns: '1fr 1fr',
+      width: size,
+      height: size,
+      gap: Math.max(1, Math.round(size / 9)),
+      flex: '0 0 auto',
+    }}
+    aria-hidden="true"
+  >
+    {['#f25022', '#7fba00', '#00a4ef', '#ffb900'].map((c) => (
+      <span key={c} style={{ background: c }} />
+    ))}
+  </span>
+)
+
 export function Login() {
   const navigate = useNavigate()
-  const { signIn } = useSession()
-  const { data, error, loading, reload } = useApi(() => api.get('/dev/users'), [])
+  const location = useLocation()
+  const { signIn, signInWithMicrosoft, devAuth } = useSession()
+  // /dev/users only exists while the backend runs with dev auth enabled.
+  const { data, error, loading, reload } = useApi(
+    () => (devAuth ? api.get('/dev/users') : Promise.resolve(null)),
+    [devAuth],
+  )
+
+  // Where RequireUser intercepted the user from, so Microsoft sign-in ends there.
+  // RequireUser stores the bare path; accept a location object too.
+  const from = location.state?.from
+  const intendedPath = (typeof from === 'string' ? from : from?.pathname) || '/'
 
   const pick = async (id) => {
     await signIn(id)
@@ -154,15 +183,27 @@ export function Login() {
               Sign in
             </h2>
             <p style={{ fontSize: 14.5, lineHeight: 1.55, color: 'var(--muted)', margin: '10px 0 0' }}>
-              Microsoft sign-in lands next. Until then, pick one of the seeded accounts. Each one has
-              a different role, so you can see what every role is allowed to do.
+              {devAuth
+                ? 'Pick one of the seeded accounts. Each one has a different role, so you can see what every role is allowed to do.'
+                : 'Use your ABAC Microsoft account. You will be sent to the university sign-in page and brought straight back to where you were.'}
             </p>
           </div>
 
-          {loading ? <Loading label="Loading accounts" /> : null}
-          {error ? <ErrorState error={error} onRetry={reload} /> : null}
+          {!devAuth ? (
+            <button
+              className="btn btn-primary"
+              style={{ padding: '15px 18px', gap: 11 }}
+              onClick={() => signInWithMicrosoft(intendedPath)}
+            >
+              <MicrosoftMark size={19} />
+              Sign in with your ABAC Microsoft account
+            </button>
+          ) : null}
 
-          {data ? (
+          {devAuth && loading ? <Loading label="Loading accounts" /> : null}
+          {devAuth && error ? <ErrorState error={error} onRetry={reload} /> : null}
+
+          {devAuth && data ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {data.users.map((u) => (
                 <button
@@ -196,11 +237,18 @@ export function Login() {
             </div>
           ) : null}
 
-          <div className="note-quiet">
-            No passwords, no tokens. The chosen account id goes in localStorage and rides along on
-            every request as a header, which one middleware on the server turns into the current
-            user. Swapping that for a real ABAC login touches one file.
-          </div>
+          {devAuth ? (
+            <div className="note-quiet">
+              No passwords, no tokens. The chosen account id goes in localStorage and rides along on
+              every request as a header, which one middleware on the server turns into the current
+              user.
+            </div>
+          ) : (
+            <div className="note-quiet">
+              No password is stored here. The server keeps the session in a signed httpOnly cookie
+              and every request carries it automatically.
+            </div>
+          )}
           <div style={{ fontSize: 12, color: 'var(--muted-3)' }}>CSX4110 · Section 542 · v0.5</div>
         </div>
       </div>

@@ -7,9 +7,75 @@ import { useSession } from '../session.jsx'
 import { Empty, ErrorState, Icon, Kicker, Loading, Stat } from '../components/ui.jsx'
 import { initials, relativeTime } from '../lib/format.js'
 
+/**
+ * Microsoft sign-in can create an account before it knows the student id, so
+ * the id is asked for once here (the server refuses a second change) next to
+ * the freely editable bio.
+ */
+function AboutCard({ user, onSaved }) {
+  const { flash, flashError } = useToast()
+  const [universityId, setUniversityId] = useState('')
+  const [bio, setBio] = useState(user.bio ?? '')
+  const [saving, setSaving] = useState(false)
+  const idPending = !user.universityId
+
+  const save = async () => {
+    const trimmed = universityId.trim()
+    if (idPending && !trimmed) return
+    setSaving(true)
+    try {
+      await api.put('/me', idPending ? { universityId: trimmed, bio } : { bio })
+      await onSaved()
+      flash('Profile saved.')
+    } catch (err) {
+      flashError(err)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <Kicker>ABOUT YOU</Kicker>
+      {idPending ? (
+        <div>
+          <div className="label">STUDENT ID · CAN ONLY BE SET ONCE</div>
+          <input
+            className="field"
+            style={{ maxWidth: 260 }}
+            value={universityId}
+            onChange={(e) => setUniversityId(e.target.value)}
+            placeholder="e.g. 6700001"
+            inputMode="numeric"
+          />
+          <div style={{ fontSize: 12.5, color: 'var(--muted-2)', marginTop: 7 }}>
+            Shown on your profile so other students know who they are dealing with. Once saved it
+            cannot be changed.
+          </div>
+        </div>
+      ) : null}
+      <div>
+        <div className="label">BIO</div>
+        <textarea
+          className="field"
+          rows={3}
+          value={bio}
+          onChange={(e) => setBio(e.target.value)}
+          placeholder="A line or two about you, visible on your public profile."
+        />
+      </div>
+      <div>
+        <button className="btn btn-primary btn-sm" onClick={save} disabled={saving || (idPending && !universityId.trim())}>
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export function Profile() {
   const params = useParams()
-  const { me, tags: myTags, reload: reloadSession } = useSession()
+  const { me, tags: myTags, reload: reloadSession, devAuth } = useSession()
   const { flash, flashError } = useToast()
 
   const userId = params.id ?? me?.id
@@ -51,6 +117,15 @@ export function Profile() {
       flash(url)
     }
   }
+
+  const saveAbout = async () => {
+    await reloadSession()
+    profile.reload()
+  }
+
+  // Dev-picker accounts are seeded complete, and older backends have no PUT
+  // /me, so the card only appears for them if the id is genuinely missing.
+  const showAbout = isSelf && (!devAuth || !user.universityId)
 
   return (
     <div style={{ maxWidth: 1080, display: 'flex', flexDirection: 'column', gap: 22 }}>
@@ -123,6 +198,8 @@ export function Profile() {
           ) : null}
         </div>
       </div>
+
+      {showAbout ? <AboutCard user={user} onSaved={saveAbout} /> : null}
 
       {isSelf && editing && allTags.data ? (
         <div className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>

@@ -1,30 +1,42 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
-import { api, clearStoredUserId, getStoredUserId, setStoredUserId } from './api.js'
+import {
+  api,
+  clearStoredUserId,
+  fetchMeta,
+  getStoredUserId,
+  microsoftLoginUrl,
+  setStoredUserId,
+} from './api.js'
 
 const SessionContext = createContext(null)
 
 /**
- * Holds whoever is currently "signed in".
+ * Holds whoever is currently "signed in". Two credentials, one shape:
  *
- * In v0.5 that is a seeded user picked from a list, remembered in localStorage.
- * When Microsoft sign-in lands this provider keeps the same shape: only where
- * the credential comes from changes.
+ * - Dev picker (meta.devAuth true): a seeded user id in localStorage, sent as
+ *   the x-dev-user-id header. This is the only mode until /meta exists.
+ * - Microsoft SSO (meta.devAuth false): an httpOnly cookie the server set on
+ *   /auth/callback. Nothing is stored or attached client-side.
  */
 export function SessionProvider({ children }) {
-  const [state, setState] = useState({ me: null, loading: true })
+  const [state, setState] = useState({ me: null, loading: true, devAuth: true })
 
   const load = useCallback(async () => {
-    if (!getStoredUserId()) {
-      setState({ me: null, loading: false })
+    const { devAuth } = await fetchMeta()
+    // A cookie session authenticates by cookie alone; drop any picker id left
+    // over from earlier so requests never send a conflicting header.
+    if (!devAuth) clearStoredUserId()
+    if (devAuth && !getStoredUserId()) {
+      setState({ me: null, loading: false, devAuth })
       return
     }
     try {
       const me = await api.get('/me')
-      setState({ me, loading: false })
+      setState({ me, loading: false, devAuth })
     } catch {
-      // Stale id, e.g. the database was reseeded and the old uuid is gone.
+      // 401 (no or expired cookie), or a stale picked id after a reseed.
       clearStoredUserId()
-      setState({ me: null, loading: false })
+      setState({ me: null, loading: false, devAuth })
     }
   }, [])
 
@@ -41,10 +53,18 @@ export function SessionProvider({ children }) {
     [load],
   )
 
-  const signOut = useCallback(() => {
+  /** Leaves the SPA entirely; the server brings the browser back via returnTo. */
+  const signInWithMicrosoft = useCallback((returnTo) => {
     clearStoredUserId()
-    setState({ me: null, loading: false })
+    window.location.assign(microsoftLoginUrl(returnTo))
   }, [])
+
+  const signOut = useCallback(() => {
+    // Only a cookie session has server-side state to end.
+    if (!state.devAuth) api.get('/auth/logout').catch(() => {})
+    clearStoredUserId()
+    setState((s) => ({ me: null, loading: false, devAuth: s.devAuth }))
+  }, [state.devAuth])
 
   const value = {
     me: state.me?.user ?? null,
@@ -52,7 +72,9 @@ export function SessionProvider({ children }) {
     tags: state.me?.tags ?? [],
     stats: state.me?.stats ?? null,
     loading: state.loading,
+    devAuth: state.devAuth,
     signIn,
+    signInWithMicrosoft,
     signOut,
     reload: load,
   }

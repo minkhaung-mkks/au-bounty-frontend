@@ -18,9 +18,11 @@ async function request(path, { method = 'GET', body } = {}) {
   const headers = {}
   if (body !== undefined) headers['Content-Type'] = 'application/json'
 
-  // v0.5 stand-in for a bearer token. One header, one middleware on the server.
-  const userId = getStoredUserId()
-  if (userId) headers['x-dev-user-id'] = userId
+  // Only dev-picker sessions identify themselves this way. A Microsoft SSO
+  // session is an httpOnly cookie the server set, which same-origin fetch
+  // already sends, so nothing is attached for it.
+  const devUserId = getStoredUserId()
+  if (devUserId) headers['x-dev-user-id'] = devUserId
 
   const res = await fetch(BASE + path, {
     method,
@@ -40,3 +42,25 @@ export const api = {
   put: (path, body) => request(path, { method: 'PUT', body }),
   patch: (path, body) => request(path, { method: 'PATCH', body }),
 }
+
+/**
+ * How the backend wants sign-in to work. Until the endpoint lands it 404s (or
+ * the server is down entirely), and the only safe answer is "dev auth", i.e.
+ * exactly today's behavior. Only an explicit `devAuth: false` switches the app
+ * over to Microsoft sign-in. Read with a plain fetch because a 404 body is not
+ * guaranteed to be JSON.
+ */
+export async function fetchMeta() {
+  try {
+    const res = await fetch(`${BASE}/meta`)
+    if (!res.ok) return { devAuth: true, auth: null }
+    const payload = await res.json().catch(() => null)
+    return { devAuth: payload?.devAuth !== false, auth: payload?.auth ?? null }
+  } catch {
+    return { devAuth: true, auth: null }
+  }
+}
+
+/** The login route answers with a 302 to Microsoft, so it needs a full page navigation, not fetch. */
+export const microsoftLoginUrl = (returnTo) =>
+  `${BASE}/auth/login?returnTo=${encodeURIComponent(returnTo || '/')}`
