@@ -41,6 +41,40 @@ export const api = {
   post: (path, body) => request(path, { method: 'POST', body: body ?? {} }),
   put: (path, body) => request(path, { method: 'PUT', body }),
   patch: (path, body) => request(path, { method: 'PATCH', body }),
+  del: (path) => request(path, { method: 'DELETE' }),
+}
+
+/**
+ * File downloads need the same credentials as every other request, which a
+ * plain <a href> cannot carry (the dev-picker header especially, so anchor
+ * downloads 401 in dev mode). The bytes move through fetch and land via a blob
+ * object-URL click instead. Errors still come back as the JSON envelope.
+ */
+export async function downloadFile(path, fileName) {
+  const headers = {}
+  const devUserId = getStoredUserId()
+  if (devUserId) headers['x-dev-user-id'] = devUserId
+
+  const res = await fetch(BASE + path, { headers })
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    let payload = null
+    try {
+      payload = text ? JSON.parse(text) : null
+    } catch {
+      payload = null
+    }
+    throw new ApiError(res.status, payload)
+  }
+
+  const url = URL.createObjectURL(await res.blob())
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = fileName
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  URL.revokeObjectURL(url)
 }
 
 /**

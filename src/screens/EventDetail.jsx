@@ -1,15 +1,12 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { api } from '../api.js'
+import { api, downloadFile } from '../api.js'
 import { useApi } from '../lib/useApi.js'
 import { useSession } from '../session.jsx'
 import { useToast } from '../components/Toast.jsx'
 import { Avatar, ErrorState, Icon, Kicker, Loading } from '../components/ui.jsx'
 import { dateTime, relativeTime, rewardLabel, timeOnly } from '../lib/format.js'
 import { subscribe, unsubscribe, useSocketEvent } from '../lib/socket.js'
-
-/** Same prefix every fetch in api.js uses; this one is a plain link download. */
-const ICS_URL = (id) => `/aubounty/api/tasks/${id}/calendar.ics`
 
 /** Google's template wants 20260905T133000Z, i.e. UTC with the punctuation gone. */
 const utcStamp = (value) => new Date(value).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z'
@@ -43,6 +40,7 @@ export function EventDetail() {
   const { me, orgs } = useSession()
   const { flash, flashError } = useToast()
   const { data, error, loading, reload } = useApi(() => api.get(`/tasks/${id}`), [id])
+  const [downloading, setDownloading] = useState(false)
 
   // Live seat and check-in changes. The task room only says "something about
   // this task changed" (status/occupancy, no assignment detail), so the row
@@ -73,13 +71,13 @@ export function EventDetail() {
   const going = mine && !['WITHDRAWN', 'REJECTED'].includes(mine.status)
   const myCheckedIn = isCheckedIn(mine)
 
-  // Who may open the organizer view: the poster, the sponsoring org, teachers
-  // and admins. Exactly the access the checkin-code endpoint enforces.
+  // Who may open the organizer view: the poster, the sponsoring org's members
+  // and admins. Mirrors canManageCheckin on the server; a teacher who did not
+  // post the event is deliberately absent, so they never see a 403 screen.
   const canShowCode =
     task.isMine ||
-    Boolean(task.org && orgs.some((o) => o.id === task.org.id)) ||
-    me?.role === 'TEACHER' ||
-    me?.role === 'ADMIN'
+    me?.role === 'ADMIN' ||
+    Boolean(task.org && orgs.some((o) => o.id === task.org.id))
 
   const attendees = task.assignments ?? []
   const checkedInCount = attendees.filter((a) => isCheckedIn(a)).length
@@ -101,6 +99,20 @@ export function EventDetail() {
       reload()
     } catch (err) {
       flashError(err)
+    }
+  }
+
+  // Fetched, not anchored: the api client attaches the dev-picker header (and
+  // the cookie session rides along same-origin), so the file always arrives.
+  const downloadIcs = async () => {
+    if (downloading) return
+    setDownloading(true)
+    try {
+      await downloadFile(`/tasks/${task.id}/calendar.ics`, `aubounty-${task.id}.ics`)
+    } catch (err) {
+      flashError(err)
+    } finally {
+      setDownloading(false)
     }
   }
 
@@ -226,14 +238,15 @@ export function EventDetail() {
             <div className="label" style={{ marginBottom: 0 }}>
               ADD TO CALENDAR
             </div>
-            <a
+            <button
+              type="button"
               className="btn btn-outline-dark btn-block"
-              href={ICS_URL(task.id)}
-              download={`aubounty-${task.id}.ics`}
+              onClick={downloadIcs}
+              disabled={downloading}
             >
               <Icon name="download" size={17} color="var(--gold)" />
-              Download .ics
-            </a>
+              {downloading ? 'Downloading…' : 'Download .ics'}
+            </button>
             {calendarUrl ? (
               <a className="btn btn-outline-dark btn-block" href={calendarUrl} target="_blank" rel="noreferrer">
                 <Icon name="event" size={17} color="var(--gold)" />
