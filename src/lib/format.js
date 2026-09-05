@@ -56,6 +56,10 @@ export function dateTime(value) {
   })
 }
 
+/** Message bubbles carry only the clock time; the day is in the thread row. */
+export const timeOnly = (value) =>
+  value ? new Date(value).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : ''
+
 export function spotsLabel(task) {
   if (task.type === 'EVENT') return `${task.spotsLeft} seats left`
   if (task.spotsLeft === 0) return 'Full'

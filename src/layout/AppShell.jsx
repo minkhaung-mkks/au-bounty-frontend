@@ -3,12 +3,15 @@ import { NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'reac
 import { api } from '../api.js'
 import { useSession } from '../session.jsx'
 import { Icon } from '../components/ui.jsx'
+import { EmergencyBanner } from '../components/EmergencyBanner.jsx'
 import { initials } from '../lib/format.js'
+import { useSocketEvent, useSocketSession } from '../lib/socket.js'
+import { reloadThreadsSoon, threadsStore, totalUnread, useThreads } from '../lib/threads.js'
 
 const NAV = [
   { to: '/', label: 'Board', icon: 'grid_view', end: true },
   { to: '/my-tasks', label: 'My tasks', icon: 'checklist', badge: 'mine' },
-  { to: '/messages', label: 'Messages', icon: 'forum' },
+  { to: '/messages', label: 'Messages', icon: 'forum', badge: 'messages' },
   { to: '/check-in', label: 'Check-in', icon: 'qr_code_2' },
   { to: '/profile', label: 'Profile', icon: 'person' },
   { to: '/admin', label: 'Admin', icon: 'shield_person', adminOnly: true },
@@ -22,6 +25,25 @@ export function AppShell({ children }) {
   const onBoard = location.pathname === '/'
   const [query, setQuery] = useState(searchParams.get('q') ?? '')
   const [mineCount, setMineCount] = useState(0)
+  const { threads } = useThreads()
+  const unreadCount = totalUnread(threads)
+
+  // One socket while signed in; the cookie (or dev handshake header) identifies it.
+  useSocketSession(me.id)
+
+  // Badge on "Messages": unread totals, refreshed whenever a thread nudges us
+  // while we are not sitting in it looking at it.
+  useEffect(() => {
+    threadsStore.reload()
+  }, [me.id])
+
+  useSocketEvent('message:new', (payload) => {
+    const assignmentId = payload?.assignmentId ?? payload?.message?.assignmentId
+    if (!assignmentId) return
+    const lookingAtIt =
+      threadsStore.getState().openThreadId === assignmentId && document.hasFocus()
+    if (!lookingAtIt) reloadThreadsSoon()
+  })
 
   // Badge on "My tasks": applicants waiting on you plus reviews you owe.
   useEffect(() => {
@@ -58,6 +80,7 @@ export function AppShell({ children }) {
 
   return (
     <div className="shell">
+      <EmergencyBanner />
       <aside className="sidebar">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div
@@ -109,6 +132,9 @@ export function AppShell({ children }) {
               <span>{n.label}</span>
               {n.badge === 'mine' && mineCount > 0 ? (
                 <span className="nav-badge">{mineCount}</span>
+              ) : null}
+              {n.badge === 'messages' && unreadCount > 0 ? (
+                <span className="nav-badge">{unreadCount}</span>
               ) : null}
             </NavLink>
           ))}

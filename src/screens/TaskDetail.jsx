@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api.js'
 import { useApi } from '../lib/useApi.js'
@@ -5,6 +6,7 @@ import { useToast } from '../components/Toast.jsx'
 import { useSession } from '../session.jsx'
 import { Avatar, ErrorState, Icon, Kicker, Loading } from '../components/ui.jsx'
 import { STATUS_LABEL, TYPE_CLASS, dateTime, relativeTime, rewardLabel, spotsLabel } from '../lib/format.js'
+import { subscribe, unsubscribe, useSocketEvent } from '../lib/socket.js'
 
 export function TaskDetail() {
   const { id } = useParams()
@@ -13,7 +15,33 @@ export function TaskDetail() {
   const { me } = useSession()
   const { data, error, loading, reload } = useApi(() => api.get(`/tasks/${id}`), [id])
 
-  const task = data?.task
+  // Live status/occupancy from the task room, patched onto the loaded row.
+  const [live, setLive] = useState(null)
+  const lastStatusRef = useRef(null)
+
+  useEffect(() => {
+    setLive(null)
+    lastStatusRef.current = null
+    subscribe({ taskId: id })
+    return () => unsubscribe({ taskId: id })
+  }, [id])
+
+  useSocketEvent('task:updated', (payload) => {
+    if (!payload || payload.taskId !== id) return
+    const prev = lastStatusRef.current
+    if (payload.status) lastStatusRef.current = payload.status
+    setLive((current) => ({ ...current, ...payload }))
+    if (payload.status && prev && prev !== payload.status) {
+      flash(`Status is now ${STATUS_LABEL[payload.status] ?? payload.status.toLowerCase()}`)
+    }
+  })
+
+  const task = data ? { ...data.task, ...live } : null
+  // Once the row is loaded, the socket's next different status is a transition.
+  useEffect(() => {
+    if (data?.task && !live) lastStatusRef.current = data.task.status
+  }, [data, live])
+
   if (loading) return <Loading label="Loading task" />
   if (error) return <ErrorState error={error} onRetry={reload} />
   // Events have their own screen: seats and check-in instead of apply and review.
@@ -23,6 +51,7 @@ export function TaskDetail() {
     try {
       await fn()
       flash(message)
+      setLive(null)
       reload()
     } catch (err) {
       flashError(err)
