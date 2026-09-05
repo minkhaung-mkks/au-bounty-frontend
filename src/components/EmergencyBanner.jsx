@@ -4,10 +4,15 @@ import { useSocketEvent } from '../lib/socket.js'
 import { Icon } from './ui.jsx'
 import { relativeTime } from '../lib/format.js'
 
+/** Three banners cover a screen; more than that is noise on top of an emergency. */
+const MAX_VISIBLE = 3
+
 /**
  * Live emergency broadcasts from the global emergencies room. Events queue and
  * stack (newest on top) until each is dismissed; nothing auto-dismisses, and
- * the stack is position:fixed so the layout underneath never shifts.
+ * the stack is position:fixed so the layout underneath never shifts. Only the
+ * newest MAX_VISIBLE show; older ones wait in the queue behind a "+N more"
+ * hint and move up as banners are dismissed.
  */
 export function EmergencyBanner() {
   const [queue, setQueue] = useState([])
@@ -20,10 +25,12 @@ export function EmergencyBanner() {
 
   if (!queue.length) return null
   const dismiss = (key) => setQueue((q) => q.filter((b) => b.key !== key))
+  const visible = queue.slice(0, MAX_VISIBLE)
+  const hidden = queue.length - visible.length
 
   return (
     <div className="emergency-stack" role="alert">
-      {queue.map((b) => (
+      {visible.map((b) => (
         <div key={b.key} className="emergency-banner">
           <Icon name="emergency" size={22} color="#fff" />
           <span className="eb-kicker">EMERGENCY</span>
@@ -59,6 +66,12 @@ export function EmergencyBanner() {
           </button>
         </div>
       ))}
+      {hidden > 0 ? (
+        <div className="emergency-banner eb-more" role="status">
+          <span className="eb-kicker">+{hidden} MORE</span>
+          <span className="eb-meta">Older emergency alerts are hidden while these {MAX_VISIBLE} are open.</span>
+        </div>
+      ) : null}
     </div>
   )
 }

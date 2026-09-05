@@ -756,3 +756,43 @@ textarea.field {
     padding-right: 18px;
   }
 }
+
+/* ------------------------------------------------- emergency alert button */
+
+/* Busy icon inside the big button: locating / sending. */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+/* The idle alert button breathes once per couple of seconds; flat ring, no glow. */
+@keyframes alertPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(192, 34, 58, 0.5);
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 16px rgba(192, 34, 58, 0);
+  }
+}
+.alert-pulse {
+  animation: alertPulse 2.4s ease-out infinite;
+}
+
+/* "+N more" hint under a full emergency banner stack. */
+.eb-more {
+  background: var(--red-dark);
+  border-bottom: none;
+  padding: 8px 18px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin,
+  .alert-pulse {
+    animation: none;
+  }
+}
