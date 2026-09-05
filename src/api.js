@@ -77,21 +77,35 @@ export async function downloadFile(path, fileName) {
   URL.revokeObjectURL(url)
 }
 
+/** Missing capabilities degrade to "the integration is off", never to a crash. */
+export const NO_CAPABILITIES = Object.freeze({
+  maps: false,
+  translation: false,
+  weather: true,
+  files: true,
+})
+
 /**
  * How the backend wants sign-in to work. Until the endpoint lands it 404s (or
  * the server is down entirely), and the only safe answer is "dev auth", i.e.
  * exactly today's behavior. Only an explicit `devAuth: false` switches the app
  * over to Microsoft sign-in. Read with a plain fetch because a 404 body is not
- * guaranteed to be JSON.
+ * guaranteed to be JSON. `capabilities` reports which optional integrations
+ * (maps, translation) are keyed server-side, so the UI can hide or re-shape
+ * what would otherwise 400.
  */
 export async function fetchMeta() {
   try {
     const res = await fetch(`${BASE}/meta`)
-    if (!res.ok) return { devAuth: true, auth: null }
+    if (!res.ok) return { devAuth: true, auth: null, capabilities: NO_CAPABILITIES }
     const payload = await res.json().catch(() => null)
-    return { devAuth: payload?.devAuth !== false, auth: payload?.auth ?? null }
+    return {
+      devAuth: payload?.devAuth !== false,
+      auth: payload?.auth ?? null,
+      capabilities: payload?.capabilities ?? NO_CAPABILITIES,
+    }
   } catch {
-    return { devAuth: true, auth: null }
+    return { devAuth: true, auth: null, capabilities: NO_CAPABILITIES }
   }
 }
 

@@ -5,6 +5,7 @@ import {
   fetchMeta,
   getStoredUserId,
   microsoftLoginUrl,
+  NO_CAPABILITIES,
   setStoredUserId,
 } from './api.js'
 
@@ -19,24 +20,29 @@ const SessionContext = createContext(null)
  *   /auth/callback. Nothing is stored or attached client-side.
  */
 export function SessionProvider({ children }) {
-  const [state, setState] = useState({ me: null, loading: true, devAuth: true })
+  const [state, setState] = useState({
+    me: null,
+    loading: true,
+    devAuth: true,
+    capabilities: NO_CAPABILITIES,
+  })
 
   const load = useCallback(async () => {
-    const { devAuth } = await fetchMeta()
+    const { devAuth, capabilities } = await fetchMeta()
     // A cookie session authenticates by cookie alone; drop any picker id left
     // over from earlier so requests never send a conflicting header.
     if (!devAuth) clearStoredUserId()
     if (devAuth && !getStoredUserId()) {
-      setState({ me: null, loading: false, devAuth })
+      setState({ me: null, loading: false, devAuth, capabilities })
       return
     }
     try {
       const me = await api.get('/me')
-      setState({ me, loading: false, devAuth })
+      setState({ me, loading: false, devAuth, capabilities })
     } catch {
       // 401 (no or expired cookie), or a stale picked id after a reseed.
       clearStoredUserId()
-      setState({ me: null, loading: false, devAuth })
+      setState({ me: null, loading: false, devAuth, capabilities })
     }
   }, [])
 
@@ -63,7 +69,7 @@ export function SessionProvider({ children }) {
     // Only a cookie session has server-side state to end.
     if (!state.devAuth) api.get('/auth/logout').catch(() => {})
     clearStoredUserId()
-    setState((s) => ({ me: null, loading: false, devAuth: s.devAuth }))
+    setState((s) => ({ me: null, loading: false, devAuth: s.devAuth, capabilities: s.capabilities }))
   }, [state.devAuth])
 
   const value = {
@@ -73,6 +79,7 @@ export function SessionProvider({ children }) {
     stats: state.me?.stats ?? null,
     loading: state.loading,
     devAuth: state.devAuth,
+    capabilities: state.capabilities ?? NO_CAPABILITIES,
     signIn,
     signInWithMicrosoft,
     signOut,

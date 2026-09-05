@@ -5,6 +5,7 @@ import { useApi } from '../lib/useApi.js'
 import { useToast } from '../components/Toast.jsx'
 import { canOfferExtraCredit, canPostEvent, useSession } from '../session.jsx'
 import { ErrorState, Icon, Kicker, Loading } from '../components/ui.jsx'
+import { LocationMap } from '../components/LocationMap.jsx'
 import { TYPE_CLASS } from '../lib/format.js'
 
 const TYPES = ['REQUEST', 'EVENT', 'EMERGENCY']
@@ -26,7 +27,7 @@ const REWARD_NOTE = {
 export function Create() {
   const navigate = useNavigate()
   const { flash, flashError } = useToast()
-  const { me, orgs } = useSession()
+  const { me, orgs, capabilities } = useSession()
   const tagsReq = useApi(() => api.get('/tags'), [])
 
   const [form, setForm] = useState({
@@ -38,12 +39,23 @@ export function Create() {
     maxTakers: 1,
     acceptanceMode: 'APPROVAL',
     locationName: '',
+    locationLat: '',
+    locationLng: '',
     orgId: '',
     startsAt: '',
     deadline: '',
   })
   const [tagIds, setTagIds] = useState([])
   const [submitting, setSubmitting] = useState(false)
+
+  // D9 manual coordinates. Without server-side geocoding they are the only way
+  // a located post survives the API, so the section starts expanded; with the
+  // Maps key they stay tucked away until a create attempt comes back
+  // LOCATION_UNRESOLVED (see submit), which expands them with an explanation.
+  // Capabilities are settled before this screen mounts (RequireUser waits for
+  // the session load), so the initial state cannot go stale.
+  const [coordsOpen, setCoordsOpen] = useState(() => !capabilities.maps)
+  const [locationError, setLocationError] = useState(null)
 
   const set = (patch) => setForm((f) => ({ ...f, ...patch }))
 
@@ -61,8 +73,37 @@ export function Create() {
     })
   }
 
+  /**
+   * One coordinate field, client-side: empty means "not provided" and anything
+   * else must be a finite number inside its range. Mirrors the API's own
+   * lat -90..90 / lng -180..180 bounds so the message is friendly words
+   * instead of a 400 after the wait.
+   */
+  const coordProblem = () => {
+    const lat = form.locationLat.trim()
+    const lng = form.locationLng.trim()
+    if (!lat && !lng) return { ok: true, lat: null, lng: null }
+    if (!lat || !lng) return { ok: false, message: 'Enter both latitude and longitude, or leave both empty.' }
+    const latNum = Number(lat)
+    const lngNum = Number(lng)
+    if (!Number.isFinite(latNum) || latNum < -90 || latNum > 90)
+      return { ok: false, message: 'Latitude must be a number between -90 and 90.' }
+    if (!Number.isFinite(lngNum) || lngNum < -180 || lngNum > 180)
+      return { ok: false, message: 'Longitude must be a number between -180 and 180.' }
+    return { ok: true, lat: latNum, lng: lngNum }
+  }
+
   const submit = async (e) => {
     e.preventDefault()
+    setLocationError(null)
+
+    const coords = coordProblem()
+    if (!coords.ok) {
+      setLocationError(coords.message)
+      setCoordsOpen(true)
+      return
+    }
+
     setSubmitting(true)
     try {
       const body = {
@@ -76,6 +117,12 @@ export function Create() {
         locationName: form.locationName,
         tagIds,
       }
+      // Manual coordinates ride along only when both are filled; the server
+      // treats them as the fallback for an ungeocodable name.
+      if (coords.lat != null && coords.lng != null) {
+        body.locationLat = coords.lat
+        body.locationLng = coords.lng
+      }
       if (form.orgId) body.orgId = form.orgId
       if (form.startsAt) body.startsAt = new Date(form.startsAt).toISOString()
       if (form.deadline) body.deadline = new Date(form.deadline).toISOString()
@@ -84,7 +131,18 @@ export function Create() {
       flash('Posted. Attach files from its page if the task needs them.')
       navigate(task.type === 'EVENT' ? `/events/${task.id}` : `/tasks/${task.id}`)
     } catch (err) {
-      flashError(err)
+      if (err.code === 'LOCATION_UNRESOLVED') {
+        // The name survived neither geocoding nor manual coordinates: reopen
+        // the coordinate section with the reason right next to the fix.
+        setCoordsOpen(true)
+        setLocationError(
+          capabilities.maps
+            ? 'That location name could not be pinned on a map. Enter exact coordinates below, or rephrase the name.'
+            : 'Automatic geocoding is not available, so this post needs coordinates. Enter them below.',
+        )
+      } else {
+        flashError(err)
+      }
     } finally {
       setSubmitting(false)
     }
@@ -95,6 +153,18 @@ export function Create() {
 
   const allTags = tagsReq.data.tags
   const picked = allTags.filter((t) => tagIds.includes(t.id))
+
+  // The preview card mirrors what the detail screen will show: the placeholder
+  // grid until a Maps key exists, and a Directions deep link as soon as the
+  // typed coordinates parse.
+  const previewLat = form.locationLat.trim() !== '' ? Number(form.locationLat) : null
+  const previewLng = form.locationLng.trim() !== '' ? Number(form.locationLng) : null
+  const previewLocation = {
+    name: form.locationName,
+    lat: Number.isFinite(previewLat) ? previewLat : null,
+    lng: Number.isFinite(previewLng) ? previewLng : null,
+    mapUrl: null,
+  }
 
   return (
     <form onSubmit={submit} style={{ maxWidth: 1180, display: 'flex', flexDirection: 'column', gap: 22 }}>
@@ -290,17 +360,77 @@ export function Create() {
             <input
               className="field"
               value={form.locationName}
-              onChange={(e) => set({ locationName: e.target.value })}
+              onChange={(e) => {
+                setLocationError(null)
+                set({ locationName: e.target.value })
+              }}
               placeholder="Building, room, landmark"
               required
             />
-            <div
-              className="map-fake"
-              style={{ height: 150, marginTop: 10, border: '1px solid var(--line)' }}
+
+            <button
+              type="button"
+              className="btn btn-link"
+              style={{ marginTop: 10, fontSize: 12.5, color: 'var(--muted)' }}
+              aria-expanded={coordsOpen}
+              aria-controls="exact-location"
+              onClick={() => setCoordsOpen((open) => !open)}
             >
-              <Icon name="add_location_alt" size={38} color="var(--red)" />
-              <span className="tag">Typed in for now · geocoding lands with the Maps key</span>
-            </div>
+              <Icon name={coordsOpen ? 'expand_less' : 'expand_more'} size={16} />
+              Exact location (optional)
+            </button>
+
+            {coordsOpen ? (
+              <div id="exact-location" style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 9 }}>
+                <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+                  <div style={{ flex: '1 1 150px' }}>
+                    <div className="label">LATITUDE</div>
+                    <input
+                      className="field"
+                      type="number"
+                      step="any"
+                      min="-90"
+                      max="90"
+                      value={form.locationLat}
+                      onChange={(e) => {
+                        setLocationError(null)
+                        set({ locationLat: e.target.value })
+                      }}
+                      placeholder="13.6146"
+                      aria-label="Latitude"
+                    />
+                  </div>
+                  <div style={{ flex: '1 1 150px' }}>
+                    <div className="label">LONGITUDE</div>
+                    <input
+                      className="field"
+                      type="number"
+                      step="any"
+                      min="-180"
+                      max="180"
+                      value={form.locationLng}
+                      onChange={(e) => {
+                        setLocationError(null)
+                        set({ locationLng: e.target.value })
+                      }}
+                      placeholder="100.7121"
+                      aria-label="Longitude"
+                    />
+                  </div>
+                </div>
+                {locationError ? (
+                  <div role="alert" style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--red)' }}>
+                    {locationError}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 12, color: 'var(--muted-2)', lineHeight: 1.5 }}>
+                    {capabilities.maps
+                      ? 'Leave empty and Google Geocoding pins the name. Fill these in only when the pin lands wrong or the name cannot be found.'
+                      : 'Geocoding is not configured on this server, so a located post needs coordinates. Copy them from Google Maps; without a pin the post is rejected.'}
+                  </div>
+                )}
+              </div>
+            ) : null}
           </div>
 
           <div className="divider" style={{ display: 'flex', gap: 11, paddingTop: 22 }}>
@@ -331,6 +461,9 @@ export function Create() {
                 </span>
               ))}
             </span>
+            <div style={{ marginTop: 12, border: '1px solid var(--line)' }}>
+              <LocationMap location={previewLocation} height={110} caption={false} />
+            </div>
             <span className="task-meta">
               <span className="meta-item">
                 <Icon name="location_on" />
