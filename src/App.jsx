@@ -1,7 +1,7 @@
 import { Link, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { AppShell } from './layout/AppShell.jsx'
 import { useSession } from './session.jsx'
-import { Icon, Loading } from './components/ui.jsx'
+import { Icon, Loading, Mark } from './components/ui.jsx'
 
 import { Login } from './screens/Login.jsx'
 import { Board } from './screens/Board.jsx'
@@ -44,23 +44,7 @@ function PublicChrome({ children }) {
           gap: 14,
         }}
       >
-        <div
-          style={{
-            width: 36,
-            height: 36,
-            borderRadius: '50%',
-            background: 'var(--red)',
-            boxShadow: 'inset 0 0 0 3px var(--ink), inset 0 0 0 5px var(--gold)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontFamily: 'var(--display)',
-            fontWeight: 800,
-            fontSize: 13,
-          }}
-        >
-          AU
-        </div>
+        <Mark size={36} />
         <span style={{ fontFamily: 'var(--display)', fontWeight: 800, fontSize: 17 }}>AU Bounty</span>
         <span style={{ marginLeft: 'auto', fontSize: 12.5, color: 'var(--muted-3)' }}>
           Public profile · no sign-in needed

@@ -5,7 +5,20 @@ import { useApi } from '../lib/useApi.js'
 import { useToast } from '../components/Toast.jsx'
 import { useSession } from '../session.jsx'
 import { Avatar, ErrorState, Icon, Kicker, Loading } from '../components/ui.jsx'
-import { STATUS_LABEL, TYPE_CLASS, dateTime, relativeTime, rewardLabel, spotsLabel } from '../lib/format.js'
+import {
+  ACCEPTANCE_LABEL,
+  dateTime,
+  hasLocation,
+  labelOf,
+  relativeTime,
+  rewardLabel,
+  ROLE_LABEL,
+  spotsLabel,
+  STATUS_LABEL,
+  TASK_STATUS_LABEL,
+  TYPE_CLASS,
+  TYPE_LABEL,
+} from '../lib/format.js'
 import { subscribe, unsubscribe, useSocketEvent } from '../lib/socket.js'
 import { AttachButton, AttachmentChips, UploadRow } from '../components/Attachments.jsx'
 import { LocationMap } from '../components/LocationMap.jsx'
@@ -28,6 +41,10 @@ export function TaskDetail() {
   const [atts, setAtts] = useState(null)
   const [uploads, setUploads] = useState([])
 
+  // The key of the action currently in flight. Every button that starts one
+  // reads it, so a slow accept cannot be pressed into two accepts.
+  const [pending, setPending] = useState(null)
+
   useEffect(() => {
     setLive(null)
     lastStatusRef.current = null
@@ -41,7 +58,10 @@ export function TaskDetail() {
     if (payload.status) lastStatusRef.current = payload.status
     setLive((current) => ({ ...current, ...payload }))
     if (payload.status && prev && prev !== payload.status) {
-      flash(`Status is now ${STATUS_LABEL[payload.status] ?? payload.status.toLowerCase()}`)
+      // An unmapped enum would read as "Status is now pending_confirmation", so
+      // anything without a sentence of its own falls back to the generic line.
+      const label = STATUS_LABEL[payload.status]
+      flash(label ? `Status is now ${label}` : 'Status updated.')
     }
   })
 
@@ -62,7 +82,9 @@ export function TaskDetail() {
   // Events have their own screen: seats and check-in instead of apply and review.
   if (task.type === 'EVENT') return <Navigate to={`/events/${task.id}`} replace />
 
-  const act = async (fn, message) => {
+  const act = async (key, fn, message) => {
+    if (pending) return
+    setPending(key)
     try {
       await fn()
       flash(message)
@@ -70,6 +92,8 @@ export function TaskDetail() {
       reload()
     } catch (err) {
       flashError(err)
+    } finally {
+      setPending(null)
     }
   }
 
@@ -132,26 +156,30 @@ export function TaskDetail() {
 
       <div style={{ display: 'flex', gap: 28, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         <div style={{ flex: '1 1 460px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 22 }}>
-          <div className="card" style={{ padding: 32 }}>
-            <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
-              <span className={`chip chip-type ${TYPE_CLASS[task.type]}`}>{task.type}</span>
+          <div className="card card-pad">
+            {/* The status chip is patched live from the task room, so a screen
+                reader hears the change instead of finding it later. */}
+            <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }} aria-live="polite">
+              <span className={`chip chip-type ${TYPE_CLASS[task.type]}`}>
+                {labelOf(TYPE_LABEL, task.type)}
+              </span>
               {task.tags.map((t) => (
                 <span key={t.id} className="chip">
-                  {t.name.toUpperCase()}
+                  {t.name}
                 </span>
               ))}
-              <span className="chip chip-reward">
-                {task.acceptanceMode === 'AUTO' ? 'FIRST COME' : 'APPLY & APPROVE'}
-              </span>
-              {task.status !== 'OPEN' ? <span className="chip">{task.status}</span> : null}
+              <span className="chip">{labelOf(ACCEPTANCE_LABEL, task.acceptanceMode)}</span>
+              {task.status !== 'OPEN' ? (
+                <span className="chip">{labelOf(TASK_STATUS_LABEL, task.status)}</span>
+              ) : null}
             </div>
 
-            <h1 className="display" style={{ fontSize: 38, lineHeight: 1.1, margin: '16px 0 0' }}>
+            <h1 className="display" style={{ margin: '16px 0 0' }}>
               {task.title}
             </h1>
             <p
               style={{
-                fontSize: 15.5,
+                fontSize: 14,
                 lineHeight: 1.65,
                 color: 'var(--ink-4)',
                 margin: '16px 0 0',
@@ -175,25 +203,27 @@ export function TaskDetail() {
               }}
             >
               <span className="meta-item">
-                <Icon name="schedule" size={18} color="var(--red)" />
+                <Icon name="schedule" size={18} color="var(--muted-2)" />
                 Posted {relativeTime(task.createdAt)}
               </span>
               {task.deadline ? (
                 <span className="meta-item">
-                  <Icon name="event_busy" size={18} color="var(--red)" />
+                  <Icon name="event_busy" size={18} color="var(--muted-2)" />
                   Deadline {dateTime(task.deadline)}
                 </span>
               ) : null}
               <span className="meta-item">
-                <Icon name="group" size={18} color="var(--red)" />
+                <Icon name="group" size={18} color="var(--muted-2)" />
                 {spotsLabel(task)}
               </span>
             </div>
           </div>
 
-          <div className="card">
-            <LocationMap location={task.location} />
-          </div>
+          {hasLocation(task.location) ? (
+            <div className="card">
+              <LocationMap location={task.location} />
+            </div>
+          ) : null}
 
           {canManageFiles || attachments.length ? (
             <div className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -239,9 +269,14 @@ export function TaskDetail() {
             </div>
           ) : null}
 
-          {task.isMine && applicants.length ? (
+          {/* Rendered even when empty: a poster waiting for applications is
+              still on the screen that closes their loop. */}
+          {task.isMine ? (
             <div className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <Kicker>APPLICANTS</Kicker>
+              {applicants.length === 0 ? (
+                <div style={{ fontSize: 13, color: 'var(--muted-2)' }}>No applications yet.</div>
+              ) : null}
               {applicants.map((a) => (
                 <div
                   key={a.id}
@@ -251,10 +286,11 @@ export function TaskDetail() {
                     gap: 14,
                     padding: '14px 0',
                     borderBottom: '1px solid var(--line-3)',
+                    flexWrap: 'wrap',
                   }}
                 >
                   <Avatar name={a.taker.name} />
-                  <div style={{ flex: 1 }}>
+                  <div style={{ flex: 1, minWidth: 160 }}>
                     <div style={{ fontSize: 14.5, fontWeight: 700 }}>
                       <Link to={`/u/${a.taker.id}`}>{a.taker.name}</Link>
                     </div>
@@ -263,11 +299,16 @@ export function TaskDetail() {
                     </div>
                   </div>
                   {a.status === 'APPLIED' ? (
-                    <div style={{ display: 'flex', gap: 8 }}>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                       <button
                         className="btn btn-outline btn-sm"
+                        disabled={pending === `reject:${a.id}`}
                         onClick={() =>
-                          act(() => api.post(`/assignments/${a.id}/reject`), 'Application declined.')
+                          act(
+                            `reject:${a.id}`,
+                            () => api.post(`/assignments/${a.id}/reject`),
+                            'Application declined.',
+                          )
                         }
                       >
                         Decline
@@ -275,10 +316,12 @@ export function TaskDetail() {
                       <button
                         className="btn btn-primary btn-sm"
                         style={{ fontSize: 12.5 }}
+                        disabled={pending === `accept:${a.id}`}
                         onClick={() =>
                           act(
+                            `accept:${a.id}`,
                             () => api.post(`/assignments/${a.id}/accept`),
-                            'Accepted. A private thread opens for this assignment once messaging is wired.',
+                            'Accepted. A private thread is open for this assignment.',
                           )
                         }
                       >
@@ -288,14 +331,19 @@ export function TaskDetail() {
                   ) : a.status === 'PENDING_CONFIRMATION' ? (
                     <button
                       className="btn btn-dark btn-sm"
+                      disabled={pending === `confirm:${a.id}`}
                       onClick={() =>
-                        act(() => api.post(`/assignments/${a.id}/confirm`), 'Completion confirmed.')
+                        act(
+                          `confirm:${a.id}`,
+                          () => api.post(`/assignments/${a.id}/confirm`),
+                          'Completion confirmed.',
+                        )
                       }
                     >
                       Confirm completion
                     </button>
                   ) : (
-                    <span className="chip">{STATUS_LABEL[a.status]}</span>
+                    <span className="chip">{labelOf(STATUS_LABEL, a.status)}</span>
                   )}
                 </div>
               ))}
@@ -303,18 +351,13 @@ export function TaskDetail() {
           ) : null}
         </div>
 
-        <div style={{ width: 352, flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div className="panel-dark" style={{ padding: 26 }}>
+        <div
+          className="rail"
+          style={{ flex: '1 1 320px', maxWidth: 352, display: 'flex', flexDirection: 'column', gap: 16 }}
+        >
+          <div className="panel-dark" style={{ padding: 28 }}>
             <Kicker gold>REWARD</Kicker>
-            <div
-              style={{
-                fontFamily: 'var(--display)',
-                fontWeight: 800,
-                fontSize: 34,
-                letterSpacing: '-0.02em',
-                marginTop: 6,
-              }}
-            >
+            <div className="display" style={{ fontSize: 34, marginTop: 6 }}>
               {rewardLabel(task.reward)}
             </div>
             <div style={{ fontSize: 12.5, color: 'var(--muted-2)', marginTop: 6, lineHeight: 1.5 }}>
@@ -324,23 +367,13 @@ export function TaskDetail() {
 
             {task.isMine ? (
               <div style={{ marginTop: 20, display: 'flex', flexDirection: 'column', gap: 9 }}>
-                <div
-                  style={{
-                    border: '1px solid var(--gold)',
-                    padding: 14,
-                    textAlign: 'center',
-                    fontSize: 13,
-                    fontWeight: 700,
-                    color: 'var(--gold-light)',
-                  }}
-                >
-                  Your post
-                </div>
+                <div className="plate-quiet">Your post</div>
                 {task.status !== 'CANCELLED' && task.status !== 'COMPLETED' ? (
                   <button
                     className="btn btn-outline-dark btn-block"
+                    disabled={pending === 'cancel'}
                     onClick={() =>
-                      act(() => api.post(`/tasks/${task.id}/cancel`), 'Post cancelled.')
+                      act('cancel', () => api.post(`/tasks/${task.id}/cancel`), 'Post cancelled.')
                     }
                   >
                     Cancel this post
@@ -351,9 +384,10 @@ export function TaskDetail() {
               <button
                 className="btn btn-primary btn-block"
                 style={{ marginTop: 20 }}
-                disabled={task.status !== 'OPEN'}
+                disabled={task.status !== 'OPEN' || pending === 'apply'}
                 onClick={() =>
                   act(
+                    'apply',
                     () => api.post(`/tasks/${task.id}/apply`),
                     task.acceptanceMode === 'AUTO'
                       ? 'You are on the task.'
@@ -362,30 +396,21 @@ export function TaskDetail() {
                 }
               >
                 {task.status !== 'OPEN'
-                  ? `Closed · ${task.status}`
+                  ? `Closed · ${labelOf(TASK_STATUS_LABEL, task.status)}`
                   : task.acceptanceMode === 'AUTO'
                     ? 'Take this task'
                     : 'Apply to help'}
               </button>
             ) : (
               <div style={{ marginTop: 20, display: 'flex', flexDirection: 'column', gap: 9 }}>
-                <div
-                  style={{
-                    border: '1px solid var(--gold)',
-                    padding: 14,
-                    textAlign: 'center',
-                    fontSize: 13,
-                    fontWeight: 700,
-                    color: 'var(--gold-light)',
-                  }}
-                >
-                  {STATUS_LABEL[mine.status]}
-                </div>
+                <div className="plate-gold">{labelOf(STATUS_LABEL, mine.status)}</div>
                 {['ACCEPTED', 'IN_PROGRESS'].includes(mine.status) ? (
                   <button
                     className="btn btn-bone btn-block"
+                    disabled={pending === 'complete'}
                     onClick={() =>
                       act(
+                        'complete',
                         () => api.post(`/assignments/${mine.id}/complete`),
                         'Marked done. The poster has 7 days before it auto-confirms.',
                       )
@@ -397,7 +422,10 @@ export function TaskDetail() {
                 {['APPLIED', 'ACCEPTED', 'IN_PROGRESS'].includes(mine.status) ? (
                   <button
                     className="btn btn-outline-dark btn-block"
-                    onClick={() => act(() => api.post(`/assignments/${mine.id}/withdraw`), 'Withdrawn.')}
+                    disabled={pending === 'withdraw'}
+                    onClick={() =>
+                      act('withdraw', () => api.post(`/assignments/${mine.id}/withdraw`), 'Withdrawn.')
+                    }
                   >
                     Withdraw
                   </button>
@@ -423,7 +451,7 @@ export function TaskDetail() {
                   {task.poster.name}
                 </span>
                 <span style={{ display: 'block', fontSize: 12.5, color: 'var(--muted-2)', marginTop: 2 }}>
-                  {task.poster.role}
+                  {labelOf(ROLE_LABEL, task.poster.role)}
                   {task.poster.universityId ? ` · ${task.poster.universityId}` : ''}
                 </span>
               </span>
@@ -447,9 +475,7 @@ export function TaskDetail() {
           ) : null}
 
           {me?.role === 'ADMIN' && !task.isMine ? (
-            <div className="note-quiet">
-              You are an admin, so the API lets you moderate this post as if it were yours.
-            </div>
+            <div className="note-quiet">You can moderate this post as an admin.</div>
           ) : null}
         </div>
       </div>

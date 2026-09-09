@@ -22,3 +22,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local tooling and design docs (not shipped)
+CLAUDE.md
+.claude/
+.impeccable/
+DESIGN.md
+PRODUCT.md

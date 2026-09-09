@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { api } from '../api.js'
 import { useSession } from '../session.jsx'
 import { useToast } from '../components/Toast.jsx'
-import { Avatar, Empty, ErrorState, Icon, Kicker, Loading } from '../components/ui.jsx'
+import { Avatar, Empty, ErrorState, Icon, Loading } from '../components/ui.jsx'
 import { subscribe, unsubscribe, useSocketEvent } from '../lib/socket.js'
 import { threadsStore, useThreads } from '../lib/threads.js'
 import { TYPE_CLASS, relativeTime, timeOnly } from '../lib/format.js'
@@ -11,29 +11,55 @@ import { AttachButton, AttachmentChips, UploadRow } from '../components/Attachme
 import { attachmentIcon, effectiveMime, formatBytes, uploadFile, uploadRejection } from '../lib/uploads.js'
 
 const MAX_LEN = 4000
+// Six rows of the composer at .field's 14px/1.55 plus its padding; past that
+// the textarea scrolls instead of eating the conversation.
+const COMPOSER_MAX_H = 160
+
+/**
+ * Below 900px the list and the conversation cannot sit side by side without
+ * squeezing one of them to nothing, so the screen shows one pane at a time.
+ */
+function useNarrow() {
+  const [narrow, setNarrow] = useState(() => window.matchMedia('(max-width: 900px)').matches)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 900px)')
+    const onChange = (e) => setNarrow(e.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
+  return narrow
+}
 
 /** One row in the thread list. */
 function ThreadRow({ thread, me, active, onSelect }) {
   const last = thread.lastMessage
   const mine = last?.senderId === me.id
+  const name = thread.counterpart?.name ?? 'Unknown'
+  const snippet = last ? `${mine ? 'You: ' : ''}${last.content}` : 'No messages yet'
   return (
     <button type="button" className={`thread-row${active ? ' active' : ''}`} onClick={onSelect}>
       <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-        <span style={{ fontFamily: 'var(--display)', fontWeight: 700, fontSize: 14.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {thread.counterpart?.name ?? 'Unknown'}
+        <span title={name} style={{ fontFamily: 'var(--display)', fontWeight: 700, fontSize: 14.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {name}
         </span>
         {thread.unreadCount > 0 ? (
-          <span className="unread-badge">{thread.unreadCount > 99 ? '99+' : thread.unreadCount}</span>
+          <span className="unread-badge" aria-label={`${thread.unreadCount} unread`}>
+            {thread.unreadCount > 99 ? '99+' : thread.unreadCount}
+          </span>
         ) : (
-          <span style={{ fontSize: 11, color: 'var(--muted-3)', flex: '0 0 auto' }}>
+          <span style={{ fontSize: 11, color: 'var(--muted-2)', flex: '0 0 auto' }}>
             {relativeTime(thread.lastActivityAt)}
           </span>
         )}
       </span>
-      <span style={{ display: 'block', fontSize: 11.5, color: 'var(--red)', fontWeight: 700, marginTop: 3 }}>
+      <span
+        title={thread.taskTitle}
+        style={{ display: 'block', fontSize: 11.5, color: 'var(--muted-2)', fontWeight: 700, marginTop: 3 }}
+      >
         {thread.taskTitle}
       </span>
       <span
+        title={snippet}
         style={{
           display: 'block',
           fontSize: 12.5,
@@ -44,7 +70,7 @@ function ThreadRow({ thread, me, active, onSelect }) {
           whiteSpace: 'nowrap',
         }}
       >
-        {last ? `${mine ? 'You: ' : ''}${last.content}` : 'No messages yet'}
+        {snippet}
       </span>
     </button>
   )
@@ -73,7 +99,7 @@ const byTime = (a, b) =>
  * assignment room, read receipts, and a REST composer that works even with the
  * socket down.
  */
-function ThreadPane({ thread, me }) {
+function ThreadPane({ thread, me, headingRef, onBack }) {
   const { flash, flashError } = useToast()
   const assignmentId = thread.assignmentId
 
@@ -88,6 +114,7 @@ function ThreadPane({ thread, me }) {
   const [pending, setPending] = useState([])
 
   const scrollRef = useRef(null)
+  const composerRef = useRef(null)
   const pinnedRef = useRef(true)
   const anchorRef = useRef(null)
   const pendingRef = useRef([])
@@ -212,9 +239,29 @@ function ThreadPane({ thread, me }) {
   const patchMessage = (id, fn) =>
     setMessages((prev) => (prev ? prev.map((m) => (m.id === id ? fn(m) : m)) : prev))
 
+  // One report per batch. Two failed files used to fire two toasts carrying
+  // two different counts, so the tally is announced once the last file lands.
+  const settleFile = (messageId, ok) => {
+    const ledger = fileLedger.current[messageId]
+    if (!ledger) return
+    if (ok) ledger.done += 1
+    else ledger.failed += 1
+    if (ledger.done + ledger.failed < ledger.total || !ledger.failed) return
+    // Partial-failure honesty: the message itself is already delivered,
+    // so the toast counts what made it rather than crying "not sent".
+    flash(
+      `Message sent; ${ledger.done} of ${ledger.total} files uploaded. Retry from the bubble.`,
+      'error',
+    )
+  }
+
   const runMessageUpload = (messageId, item) => {
-    // A retry after this pane remounted has no ledger to update; count it anyway.
-    fileLedger.current[messageId] ??= { done: 0, failed: 0, total: 1 }
+    // A retry arrives after its batch settled, or after this pane remounted
+    // with no ledger at all; either way it is a fresh batch of one.
+    const open = fileLedger.current[messageId]
+    if (!open || open.done + open.failed >= open.total) {
+      fileLedger.current[messageId] = { done: 0, failed: 0, total: 1 }
+    }
     patchMessage(messageId, (m) => ({
       ...m,
       failedUploads: (m.failedUploads ?? []).filter((f) => f.key !== item.key),
@@ -232,16 +279,14 @@ function ThreadPane({ thread, me }) {
         })),
     })
       .then((attachment) => {
-        fileLedger.current[messageId].done += 1
         patchMessage(messageId, (m) => ({
           ...m,
           uploading: (m.uploading ?? []).filter((x) => x.key !== item.key),
           attachments: [...(m.attachments ?? []), attachment],
         }))
+        settleFile(messageId, true)
       })
       .catch((err) => {
-        const ledger = fileLedger.current[messageId]
-        ledger.failed += 1
         patchMessage(messageId, (m) => ({
           ...m,
           uploading: (m.uploading ?? []).filter((x) => x.key !== item.key),
@@ -250,12 +295,7 @@ function ThreadPane({ thread, me }) {
             { key: item.key, file: item.file, error: err?.message || 'Upload failed.' },
           ],
         }))
-        // Partial-failure honesty: the message itself is already delivered,
-        // so the toast counts what made it rather than crying "not sent".
-        flash(
-          `Message sent; ${ledger.done} of ${ledger.total} files uploaded. Retry from the bubble.`,
-          'error',
-        )
+        settleFile(messageId, false)
       })
   }
 
@@ -330,6 +370,26 @@ function ThreadPane({ thread, me }) {
   }, [assignmentId])
 
   const counterpart = thread.counterpart?.name ?? 'Unknown'
+  // A thread whose other side is gone has no first name to address, and
+  // "Message Unknown" is worse than no name at all.
+  const firstName = thread.counterpart?.name ? counterpart.split(' ')[0] : ''
+
+  // The composer opens at one row and grows with the draft, so a long message
+  // is readable before it is sent instead of scrolling past in a single line.
+  useEffect(() => {
+    const el = composerRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, COMPOSER_MAX_H)}px`
+  }, [draft])
+
+  // Enter sends and Shift+Enter breaks the line, but an IME composition owns
+  // its own Enter and must not send half a word.
+  const onComposerKey = (e) => {
+    if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing) return
+    e.preventDefault()
+    send(e)
+  }
 
   return (
     <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
@@ -342,14 +402,31 @@ function ThreadPane({ thread, me }) {
           gap: 13,
         }}
       >
+        {onBack ? (
+          <button
+            type="button"
+            className="btn btn-outline btn-sm"
+            onClick={onBack}
+            aria-label="Back to conversations"
+          >
+            <Icon name="arrow_back" size={15} />
+          </button>
+        ) : null}
         <Avatar name={counterpart} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontFamily: 'var(--display)', fontWeight: 700, fontSize: 16 }}>
+          <div
+            ref={headingRef}
+            tabIndex={-1}
+            style={{ fontFamily: 'var(--display)', fontWeight: 700, fontSize: 16 }}
+          >
             <Link to={`/u/${thread.counterpart?.id}`}>{counterpart}</Link>
           </div>
           <div style={{ fontSize: 12, color: 'var(--muted-2)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 7 }}>
             {thread.taskType ? <span className={`chip chip-type ${TYPE_CLASS[thread.taskType] ?? ''}`}>{thread.taskType}</span> : null}
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <span
+              title={`${thread.taskTitle} · assignment thread`}
+              style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+            >
               {thread.taskTitle} · assignment thread
             </span>
           </div>
@@ -374,6 +451,9 @@ function ThreadPane({ thread, me }) {
         <div
           ref={scrollRef}
           onScroll={onScroll}
+          role="log"
+          aria-live="polite"
+          aria-relevant="additions"
           style={{
             flex: 1,
             overflowY: 'auto',
@@ -387,19 +467,12 @@ function ThreadPane({ thread, me }) {
           {hasMore ? (
             <button
               type="button"
+              className="btn btn-link"
               onClick={loadOlder}
               disabled={loadingOlder}
-              style={{
-                background: 'none',
-                border: 0,
-                padding: 0,
-                cursor: loadingOlder ? 'default' : 'pointer',
-                textAlign: 'center',
-                fontSize: 12,
-                color: 'var(--muted-3)',
-              }}
+              style={{ alignSelf: 'center' }}
             >
-              {loadingOlder ? 'Loading earlier messages…' : 'Scroll up for earlier messages'}
+              {loadingOlder ? 'Loading earlier messages…' : 'Load earlier messages'}
             </button>
           ) : null}
           {messages.map((m) => {
@@ -409,22 +482,7 @@ function ThreadPane({ thread, me }) {
               ...(m.failedUploads ?? []),
             ]
             return (
-              <div
-                key={m.id}
-                className={`msg-bubble ${mine ? 'msg-own' : 'msg-other'}`}
-                style={{
-                  alignSelf: mine ? 'flex-end' : 'flex-start',
-                  maxWidth: '64%',
-                  background: mine ? 'var(--red)' : '#fff',
-                  border: mine ? 0 : '1px solid var(--line)',
-                  color: mine ? '#fff' : 'inherit',
-                  padding: '13px 16px',
-                  fontSize: 14,
-                  lineHeight: 1.5,
-                  whiteSpace: 'pre-wrap',
-                  overflowWrap: 'anywhere',
-                }}
-              >
+              <div key={m.id} className={`msg-bubble ${mine ? 'msg-own' : 'msg-other'}`}>
                 {m.content}
                 {m.attachments?.length ? (
                   <div style={{ marginTop: 8 }}>
@@ -454,21 +512,10 @@ function ThreadPane({ thread, me }) {
                     ))}
                   </div>
                 ) : null}
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: mine ? 'var(--red-soft-2)' : 'var(--muted-3)',
-                    marginTop: 5,
-                    textAlign: mine ? 'right' : 'left',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: mine ? 'flex-end' : 'flex-start',
-                    gap: 4,
-                  }}
-                >
+                <div className="msg-time">
                   {timeOnly(m.createdAt)}
                   {mine && m.readAt ? (
-                    <span className="msg-read" style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                    <span className="msg-read">
                       <Icon name="done_all" size={13} />
                       Read
                     </span>
@@ -514,24 +561,27 @@ function ThreadPane({ thread, me }) {
                 </button>
               </span>
             ))}
-            <span style={{ fontSize: 11.5, color: 'var(--muted-3)' }}>
+            <span style={{ fontSize: 11.5, color: 'var(--muted-2)' }}>
               Sends with your next message
             </span>
           </div>
         ) : null}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
-          <input
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 11 }}>
+          <textarea
+            ref={composerRef}
             className="field"
-            placeholder={`Message ${counterpart.split(' ')[0]}`}
-            style={{ flex: 1 }}
+            rows={1}
+            placeholder={firstName ? `Message ${firstName}` : 'Write a message'}
+            style={{ flex: 1, resize: 'none', maxHeight: COMPOSER_MAX_H, overflowY: 'auto' }}
             value={draft}
             maxLength={MAX_LEN}
             onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={onComposerKey}
             disabled={Boolean(error)}
             aria-label="Message"
           />
           {draft.length > MAX_LEN - 200 ? (
-            <span style={{ fontSize: 11, color: 'var(--muted-3)' }}>
+            <span style={{ fontSize: 11, color: 'var(--muted-2)' }}>
               {draft.length}/{MAX_LEN}
             </span>
           ) : null}
@@ -558,6 +608,9 @@ export function Messages() {
   const [searchParams, setSearchParams] = useSearchParams()
   const selectedId = searchParams.get('thread')
   const selected = threads.find((t) => t.assignmentId === selectedId) ?? null
+  const narrow = useNarrow()
+  const headingRef = useRef(null)
+  const firstSelection = useRef(true)
 
   // Fresh list on entry; the shell badge shares this state.
   useEffect(() => {
@@ -571,22 +624,59 @@ export function Messages() {
     return () => threadsStore.closeThread()
   }, [selectedId, selected?.unreadCount])
 
+  // Picking a thread swaps the whole right pane, and on a phone the whole
+  // screen, so the reader is put at the top of what just replaced their view.
+  useEffect(() => {
+    if (firstSelection.current) {
+      firstSelection.current = false
+      return
+    }
+    if (selectedId) headingRef.current?.focus()
+  }, [selectedId])
+
   const select = (id) => setSearchParams(id ? { thread: id } : {})
+
+  // One pane at a time below 900px: the list until a thread is picked, then
+  // the conversation with a way back.
+  const showList = !narrow || !selected
 
   return (
     <div style={{ maxWidth: 1300, display: 'flex', flexDirection: 'column', gap: 20 }}>
       <div>
         <h1 className="display">Messages</h1>
-        <p className="page-sub">
-          One thread per assignment. You can only message someone you share an active task with.
-        </p>
+        <p className="page-sub">You can only message someone you share an active task with.</p>
       </div>
+
+      {/* A reload that fails with threads already on screen used to say nothing
+          at all, so the list quietly went stale. */}
+      {error && threads.length ? (
+        <div
+          role="alert"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: 10,
+            padding: '11px 15px',
+            background: 'var(--bone)',
+            border: '1px solid var(--line)',
+            fontSize: 12.5,
+            color: 'var(--muted)',
+          }}
+        >
+          <span>{error?.message || 'Could not refresh conversations.'}</span>
+          <button type="button" className="btn btn-link" onClick={() => threadsStore.reload()}>
+            Try again
+          </button>
+        </div>
+      ) : null}
 
       {error && !threads.length ? (
         <ErrorState error={error} onRetry={() => threadsStore.reload()} />
       ) : !loading && !threads.length ? (
         <Empty>
-          <Icon name="forum" size={30} color="var(--muted-3)" />
+          <Icon name="forum" size={30} color="var(--muted-2)" />
           <div style={{ marginTop: 12, fontWeight: 700, color: 'var(--muted)' }}>No conversations yet</div>
           <div style={{ marginTop: 6, fontSize: 13 }}>
             A private thread opens automatically when you accept someone onto a task, or are accepted
@@ -594,37 +684,54 @@ export function Messages() {
           </div>
         </Empty>
       ) : (
-        <div className="card" style={{ display: 'flex', height: 'min(72vh, 700px)', minHeight: 480 }}>
-          <div
-            style={{
-              width: 300,
-              flex: '0 0 auto',
-              borderRight: '1px solid var(--line)',
-              display: 'flex',
-              flexDirection: 'column',
-              overflowY: 'auto',
-            }}
-          >
-            {loading && !threads.length ? (
-              <div style={{ padding: 24 }}>
-                <Loading label="Loading threads" />
-              </div>
-            ) : (
-              threads.map((t) => (
-                <ThreadRow
-                  key={t.assignmentId}
-                  thread={t}
-                  me={me}
-                  active={t.assignmentId === selectedId}
-                  onSelect={() => select(t.assignmentId)}
-                />
-              ))
-            )}
-          </div>
+        <div
+          className="card"
+          style={{
+            display: 'flex',
+            height: 'min(72vh, 700px)',
+            // A short phone has no 480px to spare once the shell is on screen.
+            minHeight: narrow ? undefined : 480,
+          }}
+        >
+          {showList ? (
+            <div
+              style={{
+                width: narrow ? 'auto' : 300,
+                flex: narrow ? '1 1 auto' : '0 0 auto',
+                minWidth: 0,
+                borderRight: narrow ? 0 : '1px solid var(--line)',
+                display: 'flex',
+                flexDirection: 'column',
+                overflowY: 'auto',
+              }}
+            >
+              {loading && !threads.length ? (
+                <div style={{ padding: 24 }}>
+                  <Loading label="Loading threads" />
+                </div>
+              ) : (
+                threads.map((t) => (
+                  <ThreadRow
+                    key={t.assignmentId}
+                    thread={t}
+                    me={me}
+                    active={t.assignmentId === selectedId}
+                    onSelect={() => select(t.assignmentId)}
+                  />
+                ))
+              )}
+            </div>
+          ) : null}
 
           {selected ? (
-            <ThreadPane key={selected.assignmentId} thread={selected} me={me} />
-          ) : (
+            <ThreadPane
+              key={selected.assignmentId}
+              thread={selected}
+              me={me}
+              headingRef={headingRef}
+              onBack={narrow ? () => select(null) : undefined}
+            />
+          ) : narrow ? null : (
             <div
               style={{
                 flex: 1,
@@ -640,26 +747,13 @@ export function Messages() {
                 textAlign: 'center',
               }}
             >
-              <Icon name="mark_email_unread" size={30} color="var(--muted-3)" />
+              <Icon name="mark_email_unread" size={30} color="var(--muted-2)" />
               Select a thread to read and reply.
             </div>
           )}
         </div>
       )}
 
-      <div className="row">
-        <div className="note-quiet" style={{ flex: '1 1 380px' }}>
-          <Kicker>HOW THREADS WORK</Kicker>
-          <div style={{ marginTop: 8 }}>
-            Messages hang off the assignment id, not the task, so a task with three takers has three
-            separate private threads and no taker sees another's conversation.
-          </div>
-        </div>
-        <div className="note" style={{ flex: '1 1 380px' }}>
-          There are no open DMs. A thread only exists between two people who share an active
-          assignment, which keeps the moderation surface near zero.
-        </div>
-      </div>
     </div>
   )
 }

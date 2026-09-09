@@ -157,8 +157,18 @@ export function UploadRow({ name, size, progress, error, onRetry, onRemove }) {
         {error ? (
           <div className="attach-error">{error}</div>
         ) : (
-          <div className="attach-bar">
-            <div className="attach-bar-fill" style={{ width: `${Math.round((progress ?? 0) * 100)}%` }} />
+          <div
+            className="attach-bar"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round((progress ?? 0) * 100)}
+            aria-label={`Uploading ${name}`}
+          >
+            <div
+              className="attach-bar-fill"
+              style={{ transform: `scaleX(${Math.max(0, Math.min(1, progress ?? 0))})` }}
+            />
           </div>
         )}
       </div>

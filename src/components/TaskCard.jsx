@@ -11,7 +11,7 @@ export function TaskCard({ task }) {
     <button className={`task-card ${ACCENT_CLASS[task.type]}`} onClick={() => navigate(to)}>
       <span style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
         <span className={`chip chip-type ${TYPE_CLASS[task.type]}`}>{task.type}</span>
-        <span className="chip chip-reward">{rewardLabel(task.reward)}</span>
+        <span className="chip chip-reward chip-long">{rewardLabel(task.reward)}</span>
         {task.isMine ? <span className="chip">YOUR POST</span> : null}
         {task.matchScore ? (
           <span className="chip chip-skill">

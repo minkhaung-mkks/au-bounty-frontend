@@ -2,7 +2,8 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { api } from '../api.js'
 import { useApi } from '../lib/useApi.js'
 import { useSession } from '../session.jsx'
-import { Avatar, ErrorState, Icon, Loading } from '../components/ui.jsx'
+import { Avatar, ErrorState, Icon, Loading, Mark } from '../components/ui.jsx'
+import { ROLE_LABEL } from '../lib/format.js'
 
 const TRUST = [
   ['verified_user', 'Real ABAC identities only'],
@@ -50,20 +51,8 @@ export function Login() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', background: 'var(--bone)' }}>
-      <div
-        style={{
-          flex: 1.1,
-          background: 'var(--red)',
-          color: '#fff',
-          padding: '68px 72px',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'space-between',
-          position: 'relative',
-          overflow: 'hidden',
-        }}
-      >
+    <div className="login-split">
+      <div className="login-hero">
         <div
           style={{
             position: 'absolute',
@@ -88,23 +77,7 @@ export function Login() {
         />
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, position: 'relative' }}>
-          <div
-            style={{
-              width: 50,
-              height: 50,
-              borderRadius: '50%',
-              background: 'var(--red-dark)',
-              boxShadow: 'inset 0 0 0 4px var(--bone), inset 0 0 0 7px var(--gold)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontFamily: 'var(--display)',
-              fontWeight: 800,
-              fontSize: 17,
-            }}
-          >
-            AU
-          </div>
+          <Mark size={50} onRed />
           <span
             style={{
               fontFamily: 'var(--display)',
@@ -118,16 +91,7 @@ export function Login() {
         </div>
 
         <div style={{ position: 'relative', maxWidth: 560 }}>
-          <h1
-            style={{
-              fontFamily: 'var(--display)',
-              fontWeight: 800,
-              fontSize: 66,
-              lineHeight: 0.96,
-              letterSpacing: '-0.04em',
-              margin: 0,
-            }}
-          >
+          <h1 className="login-title">
             Small problems.
             <br />
             Fast answers.
@@ -168,15 +132,7 @@ export function Login() {
         </div>
       </div>
 
-      <div
-        style={{
-          flex: 1,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: 60,
-        }}
-      >
+      <div className="login-panel">
         <div style={{ width: '100%', maxWidth: 420, display: 'flex', flexDirection: 'column', gap: 22 }}>
           <div>
             <h2 className="display" style={{ fontSize: 34 }}>
@@ -184,7 +140,7 @@ export function Login() {
             </h2>
             <p style={{ fontSize: 14.5, lineHeight: 1.55, color: 'var(--muted)', margin: '10px 0 0' }}>
               {devAuth
-                ? 'Pick one of the seeded accounts. Each one has a different role, so you can see what every role is allowed to do.'
+                ? 'Pick one of the seeded accounts.'
                 : 'Use your ABAC Microsoft account. You will be sent to the university sign-in page and brought straight back to where you were.'}
             </p>
           </div>
@@ -226,7 +182,7 @@ export function Login() {
                       {u.name}
                     </span>
                     <span style={{ display: 'block', fontSize: 12, color: 'var(--muted-2)', marginTop: 2 }}>
-                      {u.role}
+                      {ROLE_LABEL[u.role] ?? u.role}
                       {u.orgs.length ? ` · ${u.orgs.map((o) => o.name).join(', ')}` : ''}
                       {u.universityId ? ` · ${u.universityId}` : ''}
                     </span>
@@ -237,19 +193,7 @@ export function Login() {
             </div>
           ) : null}
 
-          {devAuth ? (
-            <div className="note-quiet">
-              No passwords, no tokens. The chosen account id goes in localStorage and rides along on
-              every request as a header, which one middleware on the server turns into the current
-              user.
-            </div>
-          ) : (
-            <div className="note-quiet">
-              No password is stored here. The server keeps the session in a signed httpOnly cookie
-              and every request carries it automatically.
-            </div>
-          )}
-          <div style={{ fontSize: 12, color: 'var(--muted-3)' }}>CSX4110 · Section 542 · v0.5</div>
+          <div style={{ fontSize: 12, color: 'var(--muted-2)' }}>CSX4110 · Section 542 · v0.5</div>
         </div>
       </div>
     </div>

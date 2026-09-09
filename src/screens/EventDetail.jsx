@@ -5,7 +5,16 @@ import { useApi } from '../lib/useApi.js'
 import { useSession } from '../session.jsx'
 import { useToast } from '../components/Toast.jsx'
 import { Avatar, ErrorState, Icon, Kicker, Loading } from '../components/ui.jsx'
-import { dateTime, relativeTime, rewardLabel, timeOnly } from '../lib/format.js'
+import {
+  dateTime,
+  hasLocation,
+  labelOf,
+  relativeTime,
+  rewardLabel,
+  ROLE_LABEL,
+  TASK_STATUS_LABEL,
+  timeOnly,
+} from '../lib/format.js'
 import { subscribe, unsubscribe, useSocketEvent } from '../lib/socket.js'
 import { AttachButton, AttachmentChips, UploadRow } from '../components/Attachments.jsx'
 import { LocationMap } from '../components/LocationMap.jsx'
@@ -45,6 +54,8 @@ export function EventDetail() {
   const { flash, flashError } = useToast()
   const { data, error, loading, reload } = useApi(() => api.get(`/tasks/${id}`), [id])
   const [downloading, setDownloading] = useState(false)
+  // One seat action at a time, or a double click reserves twice.
+  const [seatBusy, setSeatBusy] = useState(false)
 
   // Attachments and their in-flight uploads; local patches between fetches.
   const [atts, setAtts] = useState(null)
@@ -77,7 +88,8 @@ export function EventDetail() {
 
   const task = data.task
   const reserved = task.takenCount
-  const pct = Math.min(100, Math.round((reserved / task.maxTakers) * 100))
+  // An event with no cap has no bar to fill; dividing by it would give NaN%.
+  const pct = task.maxTakers > 0 ? Math.min(100, Math.round((reserved / task.maxTakers) * 100)) : 0
   const mine = task.myAssignment
   const going = mine && !['WITHDRAWN', 'REJECTED'].includes(mine.status)
   const myCheckedIn = isCheckedIn(mine)
@@ -138,22 +150,30 @@ export function EventDetail() {
   const checkedInCount = attendees.filter((a) => isCheckedIn(a)).length
 
   const rsvp = async () => {
+    if (seatBusy) return
+    setSeatBusy(true)
     try {
       await api.post(`/tasks/${task.id}/apply`)
       flash('Seat reserved. Check in with the rotating code at the door.')
       reload()
     } catch (err) {
       flashError(err)
+    } finally {
+      setSeatBusy(false)
     }
   }
 
   const cancelSeat = async () => {
+    if (seatBusy) return
+    setSeatBusy(true)
     try {
       await api.post(`/assignments/${mine.id}/withdraw`)
       flash('Seat released.')
       reload()
     } catch (err) {
       flashError(err)
+    } finally {
+      setSeatBusy(false)
     }
   }
 
@@ -164,6 +184,8 @@ export function EventDetail() {
     setDownloading(true)
     try {
       await downloadFile(`/tasks/${task.id}/calendar.ics`, `aubounty-${task.id}.ics`)
+      // The pending label is not a receipt; say the file actually landed.
+      flash('Calendar file downloaded.')
     } catch (err) {
       flashError(err)
     } finally {
@@ -182,35 +204,43 @@ export function EventDetail() {
 
       <div
         className="panel-dark"
-        style={{ padding: '40px 44px', display: 'flex', justifyContent: 'space-between', gap: 40, flexWrap: 'wrap' }}
+        style={{ padding: 34, display: 'flex', justifyContent: 'space-between', gap: 40, flexWrap: 'wrap' }}
       >
-        <div style={{ maxWidth: 620 }}>
+        <div style={{ maxWidth: 620, minWidth: 0, flex: '1 1 320px' }}>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <span
-              className="chip"
-              style={{ background: 'var(--gold-light)', color: 'var(--ink)', fontWeight: 800, letterSpacing: '0.1em' }}
-            >
-              {rewardLabel(task.reward).toUpperCase()}
-            </span>
+            {/* "No reward" is not a hero claim, so the chip only exists when
+                there is something to name. */}
+            {task.reward && task.reward.type !== 'NONE' ? (
+              <span className="chip chip-type chip-event chip-long">{rewardLabel(task.reward)}</span>
+            ) : null}
             {task.org ? <span className="chip chip-dark">{task.org.name}</span> : null}
             {!task.org ? <span className="chip chip-dark">{task.poster.name}</span> : null}
           </div>
 
-          <h1 className="display" style={{ fontSize: 42, lineHeight: 1.06, margin: '18px 0 0' }}>
+          <h1 className="display" style={{ fontSize: 38, lineHeight: 1.06, margin: '18px 0 0' }}>
             {task.title}
           </h1>
           <p style={{ fontSize: 15.5, lineHeight: 1.65, color: 'var(--muted-3)', margin: '16px 0 0' }}>
             {task.content}
           </p>
 
-          <div style={{ display: 'flex', gap: 26, marginTop: 22, fontSize: 13.5, color: '#e7dfd4', flexWrap: 'wrap' }}>
+          <div
+            style={{
+              display: 'flex',
+              gap: 26,
+              marginTop: 22,
+              fontSize: 13.5,
+              color: 'var(--bone-2)',
+              flexWrap: 'wrap',
+            }}
+          >
             <span className="meta-item">
               <Icon name="event" size={18} color="var(--gold)" />
               {task.startsAt ? dateTime(task.startsAt) : 'Date to be announced'}
             </span>
             <span className="meta-item">
               <Icon name="location_on" size={18} color="var(--gold)" />
-              {task.location.name}
+              {task.location?.name ?? 'No location'}
             </span>
             <span className="meta-item">
               <Icon name="qr_code_2" size={18} color="var(--gold)" />
@@ -219,11 +249,15 @@ export function EventDetail() {
           </div>
 
           <div style={{ marginTop: 20, fontSize: 12.5, color: 'var(--muted-2)' }}>
-            Posted by <Link to={`/u/${task.poster.id}`}>{task.poster.name}</Link> · {task.poster.role}
+            Posted by <Link to={`/u/${task.poster.id}`}>{task.poster.name}</Link> ·{' '}
+            {labelOf(ROLE_LABEL, task.poster.role)}
           </div>
         </div>
 
-        <div style={{ width: 300, flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div
+          className="rail"
+          style={{ flex: '1 1 260px', maxWidth: 300, display: 'flex', flexDirection: 'column', gap: 14 }}
+        >
           <div style={{ background: 'var(--ink-2)', padding: 20 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: 'var(--muted-3)' }}>
               <span>Seats reserved</span>
@@ -231,47 +265,32 @@ export function EventDetail() {
                 <strong style={{ color: '#fff' }}>{reserved}</strong> / {task.maxTakers}
               </span>
             </div>
-            <div style={{ height: 8, background: 'var(--ink-4)', marginTop: 12, overflow: 'hidden' }}>
-              <div style={{ height: '100%', width: `${pct}%`, background: 'var(--gold)' }} />
+            {/* The "12 / 40" above already says this; the bar is decoration. */}
+            <div
+              style={{ height: 8, background: 'var(--ink-4)', marginTop: 12, overflow: 'hidden' }}
+              aria-hidden="true"
+            >
+              <div style={{ height: '100%', width: `${pct}%`, background: 'var(--red)' }} />
             </div>
           </div>
 
           {canShowCode ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-              {task.isMine ? (
-                <div
-                  style={{
-                    border: '1px solid var(--gold)',
-                    padding: 15,
-                    textAlign: 'center',
-                    fontSize: 13,
-                    fontWeight: 700,
-                    color: 'var(--gold-light)',
-                  }}
-                >
-                  You are the organizer
-                </div>
-              ) : null}
+              {task.isMine ? <div className="plate-gold">You are the organizer</div> : null}
               <Link className="btn btn-bone btn-block" to={`/check-in?event=${task.id}&mode=organizer`}>
                 <Icon name="qr_code_2" size={19} color="var(--red)" />
                 Show check-in code
               </Link>
             </div>
-          ) : going ? (
+          ) : null}
+
+          {/* Seat controls stand on their own: an organizer can also hold a
+              seat, and they need the same way out of it as anyone else. */}
+          {going ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
               {myCheckedIn ? (
-                <div
-                  style={{
-                    border: '1px solid var(--gold)',
-                    padding: 15,
-                    textAlign: 'center',
-                    fontSize: 13,
-                    fontWeight: 700,
-                    color: 'var(--gold-light)',
-                  }}
-                >
-                  <Icon name="check_circle" size={17} color="var(--green)" /> Checked in
-                  {mine.checkedInAt ? ` ${timeOnly(mine.checkedInAt)}` : ''}
+                <div className="plate-gold">
+                  Checked in{mine.checkedInAt ? ` ${timeOnly(mine.checkedInAt)}` : ''}
                 </div>
               ) : (
                 <Link className="btn btn-bone btn-block" to={`/check-in?event=${task.id}&mode=attendee`}>
@@ -279,13 +298,19 @@ export function EventDetail() {
                   Check in at the venue
                 </Link>
               )}
-              <button className="btn btn-outline-dark btn-block" onClick={cancelSeat}>
+              <button className="btn btn-outline-dark btn-block" disabled={seatBusy} onClick={cancelSeat}>
                 Release my seat
               </button>
             </div>
           ) : (
-            <button className="btn btn-primary btn-block" disabled={task.status !== 'OPEN'} onClick={rsvp}>
-              {task.status === 'OPEN' ? 'Reserve a seat' : `Closed · ${task.status}`}
+            <button
+              className="btn btn-primary btn-block"
+              disabled={task.status !== 'OPEN' || seatBusy}
+              onClick={rsvp}
+            >
+              {task.status === 'OPEN'
+                ? 'Reserve a seat'
+                : `Closed · ${labelOf(TASK_STATUS_LABEL, task.status)}`}
             </button>
           )}
 
@@ -306,6 +331,9 @@ export function EventDetail() {
               <a className="btn btn-outline-dark btn-block" href={calendarUrl} target="_blank" rel="noreferrer">
                 <Icon name="event" size={17} color="var(--gold)" />
                 Google Calendar
+                {/* The new tab is visible to sighted users the moment it opens;
+                    this says the same thing to everyone else. */}
+                <span className="sr-only">(opens in a new tab)</span>
               </a>
             ) : null}
           </div>
@@ -313,9 +341,11 @@ export function EventDetail() {
       </div>
 
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-        <div className="card" style={{ flex: '1 1 380px' }}>
-          <LocationMap location={task.location} />
-        </div>
+        {hasLocation(task.location) ? (
+          <div className="card" style={{ flex: '1 1 380px' }}>
+            <LocationMap location={task.location} />
+          </div>
+        ) : null}
         {capabilities.translation ? (
           <div style={{ flex: '1 1 380px' }}>
             <TranslatePanel
@@ -378,15 +408,12 @@ export function EventDetail() {
             ))}
           </div>
         ) : null}
-        <div className="note" style={{ flex: '1 1 380px', padding: 24, fontSize: 14 }}>
-          Events skip reviews. Attendance verification is the only check. Rating 200 keynote
-          attendees one by one would be meaningless.
-        </div>
       </div>
 
       {/* Only the poster (and admins) get attendee identities from the API, so
-          the list appears exactly when the payload carries it. */}
-      {attendees.length ? (
+          the list appears when the payload carries it — and, empty, for anyone
+          who can run the door, because "nobody yet" is the answer they came for. */}
+      {attendees.length || canShowCode ? (
         <div className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
             <Kicker>ATTENDEES</Kicker>
@@ -394,6 +421,9 @@ export function EventDetail() {
               {checkedInCount} of {attendees.length} checked in
             </span>
           </div>
+          {attendees.length === 0 ? (
+            <div style={{ fontSize: 13, color: 'var(--muted-2)' }}>No seats reserved yet.</div>
+          ) : null}
           {attendees.map((a) => (
             <div
               key={a.id}
@@ -412,24 +442,16 @@ export function EventDetail() {
                   <Link to={`/u/${a.taker.id}`}>{a.taker.name}</Link>
                 </div>
                 <div style={{ fontSize: 12.5, color: 'var(--muted-2)', marginTop: 2 }}>
-                  {a.taker.role} · reserved {relativeTime(a.appliedAt)}
+                  {labelOf(ROLE_LABEL, a.taker.role)} · reserved {relativeTime(a.appliedAt)}
                 </div>
               </div>
+              {/* One binary, one chip: only the colour tells the two apart. */}
               {isCheckedIn(a) ? (
                 <span
+                  className="chip"
+                  style={{ color: 'var(--green)' }}
                   title={a.checkedInAt ? dateTime(a.checkedInAt) : undefined}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    fontSize: 12,
-                    fontWeight: 700,
-                    color: 'var(--green)',
-                    background: 'var(--bone-2)',
-                    padding: '5px 9px',
-                  }}
                 >
-                  <Icon name="check_circle" size={15} color="var(--green)" />
                   Checked in{a.checkedInAt ? ` ${timeOnly(a.checkedInAt)}` : ''}
                 </span>
               ) : (

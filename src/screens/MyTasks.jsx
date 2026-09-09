@@ -3,7 +3,15 @@ import { api } from '../api.js'
 import { useApi } from '../lib/useApi.js'
 import { useToast } from '../components/Toast.jsx'
 import { Avatar, Empty, ErrorState, Icon, Kicker, Loading } from '../components/ui.jsx'
-import { STATUS_LABEL, dateTime, relativeTime, rewardLabel } from '../lib/format.js'
+import {
+  ACCEPTANCE_LABEL,
+  STATUS_LABEL,
+  TASK_STATUS_LABEL,
+  dateTime,
+  labelOf,
+  relativeTime,
+  rewardLabel,
+} from '../lib/format.js'
 
 export function MyTasks() {
   const navigate = useNavigate()
@@ -102,12 +110,12 @@ export function MyTasks() {
                     {task.title}
                   </Link>
                   <div style={{ fontSize: 13, color: 'var(--muted-2)', marginTop: 5 }}>
-                    {task.acceptanceMode === 'AUTO' ? 'First come' : 'Apply & approve'} ·{' '}
+                    {labelOf(ACCEPTANCE_LABEL, task.acceptanceMode)} ·{' '}
                     {task.maxTakers} {task.type === 'EVENT' ? 'seats' : 'spots'} · reward:{' '}
                     {rewardLabel(task.reward)} · posted {relativeTime(task.createdAt)}
                   </div>
                 </div>
-                <span className="chip chip-reward">{task.status}</span>
+                <span className="chip">{labelOf(TASK_STATUS_LABEL, task.status)}</span>
               </div>
 
               {applicants.length ? (
@@ -163,7 +171,7 @@ export function MyTasks() {
                           </button>
                         </div>
                       ) : (
-                        <span className="chip">{STATUS_LABEL[a.status]}</span>
+                        <span className="chip">{labelOf(STATUS_LABEL, a.status)}</span>
                       )}
                     </div>
                   ))}
@@ -190,7 +198,7 @@ export function MyTasks() {
               style={{ flex: '1 1 420px', padding: 28, display: 'flex', flexDirection: 'column', gap: 16 }}
             >
               <div>
-                <Kicker gold>{STATUS_LABEL[assignment.status].toUpperCase()}</Kicker>
+                <Kicker gold>{labelOf(STATUS_LABEL, assignment.status).toUpperCase()}</Kicker>
                 <div style={{ fontFamily: 'var(--display)', fontWeight: 700, fontSize: 21, marginTop: 8 }}>
                   <Link to={`/tasks/${task.id}`} style={{ color: '#fff' }}>
                     {task.title}
@@ -217,33 +225,13 @@ export function MyTasks() {
                   </button>
                 ) : null}
                 {assignment.status === 'PENDING_CONFIRMATION' ? (
-                  <div
-                    style={{
-                      flex: 1,
-                      border: '1px solid var(--gold)',
-                      padding: 14,
-                      textAlign: 'center',
-                      fontSize: 12.5,
-                      fontWeight: 700,
-                      color: 'var(--gold-light)',
-                    }}
-                  >
+                  <div className="plate-gold" style={{ flex: 1 }}>
                     Waiting on the poster · auto-confirms in 7 days
                   </div>
                 ) : null}
                 {assignment.status === 'APPLIED' ? (
-                  <div
-                    style={{
-                      flex: 1,
-                      border: '1px solid var(--ink-4)',
-                      padding: 14,
-                      textAlign: 'center',
-                      fontSize: 12.5,
-                      fontWeight: 700,
-                      color: 'var(--muted-3)',
-                    }}
-                  >
-                    Awaiting the poster's approval
+                  <div className="plate-quiet" style={{ flex: 1 }}>
+                    Awaiting the poster&rsquo;s approval
                   </div>
                 ) : null}
                 {assignment.status === 'COMPLETED' ? (
@@ -252,22 +240,18 @@ export function MyTasks() {
                       Leave a review
                     </Link>
                   ) : (
-                    <div
-                      style={{
-                        flex: 1,
-                        border: '1px solid var(--ink-4)',
-                        padding: 14,
-                        textAlign: 'center',
-                        fontSize: 12.5,
-                        fontWeight: 700,
-                        color: 'var(--muted-3)',
-                      }}
-                    >
+                    <div className="plate-quiet" style={{ flex: 1 }}>
                       Reviewed
                     </div>
                   )
                 ) : null}
-                <Link className="btn" style={{ background: 'var(--ink-3)', padding: '14px 17px' }} to="/messages">
+                <Link
+                  className="btn"
+                  style={{ background: 'var(--ink-3)', padding: '14px 17px' }}
+                  to="/messages"
+                  aria-label={`Message about ${task.title}`}
+                  title="Open messages"
+                >
                   <Icon name="chat" size={20} color="#fff" />
                 </Link>
               </div>
@@ -301,7 +285,7 @@ export function MyTasks() {
                 {task.title}
               </span>
               <span style={{ display: 'block', fontSize: 13, color: 'var(--muted-2)', marginTop: 3 }}>
-                {task.startsAt ? dateTime(task.startsAt) : 'Date to be announced'} · {task.location.name} ·{' '}
+                {task.startsAt ? dateTime(task.startsAt) : 'Date to be announced'} · {task.location.name ?? 'No location'} ·{' '}
                 {rewardLabel(task.reward)}
               </span>
             </span>

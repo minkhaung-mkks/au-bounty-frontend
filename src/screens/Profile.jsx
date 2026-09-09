@@ -4,8 +4,8 @@ import { api } from '../api.js'
 import { useApi } from '../lib/useApi.js'
 import { useToast } from '../components/Toast.jsx'
 import { useSession } from '../session.jsx'
-import { Empty, ErrorState, Icon, Kicker, Loading, Stat } from '../components/ui.jsx'
-import { initials, relativeTime } from '../lib/format.js'
+import { Empty, ErrorState, Icon, Kicker, Loading, Rating, Stat } from '../components/ui.jsx'
+import { ROLE_LABEL, initials, labelOf, relativeTime } from '../lib/format.js'
 
 /**
  * Microsoft sign-in can create an account before it knows the student id, so
@@ -39,8 +39,11 @@ function AboutCard({ user, onSaved }) {
       <Kicker>ABOUT YOU</Kicker>
       {idPending ? (
         <div>
-          <div className="label">STUDENT ID · CAN ONLY BE SET ONCE</div>
+          <label className="label" htmlFor="profile-university-id">
+            STUDENT ID · CAN ONLY BE SET ONCE
+          </label>
           <input
+            id="profile-university-id"
             className="field"
             style={{ maxWidth: 260 }}
             value={universityId}
@@ -55,8 +58,11 @@ function AboutCard({ user, onSaved }) {
         </div>
       ) : null}
       <div>
-        <div className="label">BIO</div>
+        <label className="label" htmlFor="profile-bio">
+          BIO
+        </label>
         <textarea
+          id="profile-bio"
           className="field"
           rows={3}
           value={bio}
@@ -131,17 +137,17 @@ export function Profile() {
     <div style={{ maxWidth: 1080, display: 'flex', flexDirection: 'column', gap: 22 }}>
       <div
         className="panel-dark"
-        style={{ padding: '40px 44px', display: 'flex', justifyContent: 'space-between', gap: 34, flexWrap: 'wrap' }}
+        style={{ padding: 28, display: 'flex', justifyContent: 'space-between', gap: 34, flexWrap: 'wrap' }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap', minWidth: 0 }}>
           <div
             className="avatar"
             style={{ width: 86, height: 86, fontSize: 30, background: 'var(--red)', color: '#fff' }}
           >
             {initials(user.name)}
           </div>
-          <div>
-            <h1 className="display" style={{ fontSize: 34 }}>
+          <div style={{ minWidth: 0, flex: '1 1 240px' }}>
+            <h1 className="display" style={{ fontSize: 34, overflowWrap: 'anywhere' }}>
               {user.name}
             </h1>
             <div
@@ -155,14 +161,22 @@ export function Profile() {
                 flexWrap: 'wrap',
               }}
             >
-              <Icon name="verified" size={17} color="#7fba00" />
-              {user.role}
+              <Icon name="verified" size={17} color="var(--green)" />
+              {labelOf(ROLE_LABEL, user.role)}
               {user.universityId ? ` · ${user.universityId}` : ''}
               {user.orgs.length ? ` · ${user.orgs.map((o) => `${o.name} (${o.position})`).join(', ')}` : ''}
               {` · joined ${new Date(user.createdAt).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}`}
             </div>
             {user.bio ? (
-              <div style={{ fontSize: 13.5, color: 'var(--muted-3)', marginTop: 8, maxWidth: 520 }}>
+              <div
+                style={{
+                  fontSize: 13.5,
+                  color: 'var(--muted-3)',
+                  marginTop: 8,
+                  maxWidth: 520,
+                  overflowWrap: 'anywhere',
+                }}
+              >
                 {user.bio}
               </div>
             ) : null}
@@ -234,7 +248,7 @@ export function Profile() {
           <Kicker>REVIEWS · ALL OF THEM, GOOD AND BAD</Kicker>
           {reviews.length === 0 ? (
             <Empty>
-              No published reviews yet. A review stays sealed until the double-blind window closes.
+              No published reviews yet. A review appears once both sides have submitted theirs.
             </Empty>
           ) : null}
           {reviews.map((r) => (
@@ -243,37 +257,24 @@ export function Profile() {
                 <span style={{ fontFamily: 'var(--display)', fontWeight: 700, fontSize: 16 }}>
                   {r.reviewer.name}
                 </span>
-                <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--gold)' }}>
-                  {'★'.repeat(r.rating)}
-                  {'☆'.repeat(5 - r.rating)}
-                </span>
+                <Rating value={r.rating} />
               </div>
               <div style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--ink-4)' }}>
                 {r.textHidden ? (
                   <em style={{ color: 'var(--muted-2)' }}>
-                    Text removed by an admin. The {r.rating}★ rating still counts.
+                    Text removed by an admin. The {r.rating} of 5 rating still counts.
                   </em>
                 ) : (
                   r.text || <em style={{ color: 'var(--muted-2)' }}>No comment left.</em>
                 )}
               </div>
-              <div style={{ fontSize: 12, color: 'var(--muted-3)' }}>
+              <div style={{ fontSize: 12, color: 'var(--muted-2)' }}>
                 {r.task.title} · {relativeTime(r.createdAt)}
               </div>
             </div>
           ))}
         </div>
 
-        <div style={{ width: 320, flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div className="note-quiet">
-            Bad reviews stay up. Admins can remove abusive wording, but the rating itself always
-            counts, so moderation can never inflate a score.
-          </div>
-          <div className="note-quiet">
-            {stats.reviewCount} published review{stats.reviewCount === 1 ? '' : 's'}. Anything newer
-            is still inside the double-blind window.
-          </div>
-        </div>
       </div>
     </div>
   )

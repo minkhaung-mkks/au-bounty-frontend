@@ -1,11 +1,18 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { api } from '../api.js'
 import { useApi, useDebounced } from '../lib/useApi.js'
 import { useSession } from '../session.jsx'
 import { useToast } from '../components/Toast.jsx'
 import { Avatar, Empty, ErrorState, Icon, Kicker, Loading } from '../components/ui.jsx'
-import { relativeTime } from '../lib/format.js'
+import {
+  ALERT_STATUS_LABEL,
+  ALERT_STATUS_STYLE,
+  ROLE_LABEL,
+  TAG_CATEGORY_LABEL,
+  labelOf,
+  relativeTime,
+} from '../lib/format.js'
 
 const TABS = [
   { key: 'alerts', label: 'Alerts' },
@@ -40,7 +47,12 @@ function Confirm({ message, confirmLabel = 'Confirm', tone = 'dark', busy = fals
 
 export function Admin() {
   const { me } = useSession()
-  const [tab, setTab] = useState('alerts')
+  // The open tab lives in the URL, so a refresh, the back button or a pasted
+  // link all land on the panel the admin was actually reading.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tabParam = searchParams.get('tab')
+  const tab = TABS.some((t) => t.key === tabParam) ? tabParam : TABS[0].key
+  const setTab = (key) => setSearchParams({ tab: key })
 
   if (me.role !== 'ADMIN') {
     return (
@@ -56,13 +68,13 @@ export function Admin() {
           gap: 16,
         }}
       >
-        <Icon name="lock" size={48} color="var(--muted-4)" />
-        <div className="display" style={{ fontSize: 26 }}>
-          403 · Admins only
-        </div>
+        <Icon name="lock" size={48} color="var(--muted-2)" />
+        <h1 className="display" style={{ fontSize: 34 }}>
+          Admins only
+        </h1>
         <p style={{ fontSize: 14.5, lineHeight: 1.65, color: 'var(--muted)', margin: 0 }}>
-          You are signed in as <strong>{me.role}</strong>. Authorization checks the role before the
-          route runs. Sign in as the admin account to see this screen.
+          You are signed in as <strong>{labelOf(ROLE_LABEL, me.role)}</strong>. Sign in as the
+          admin account to see this screen.
         </p>
       </div>
     )
@@ -92,10 +104,14 @@ export function Admin() {
         </div>
       </div>
 
-      {tab === 'alerts' ? <AlertsTab /> : null}
-      {tab === 'people' ? <PeopleTab /> : null}
-      {tab === 'orgs' ? <OrgsTab /> : null}
-      {tab === 'reviews' ? <ReviewsTab /> : null}
+      {/* the panel is named after the pressed tab, so the swap is announced as
+          a change of region rather than the page silently becoming something else */}
+      <div role="region" aria-label={TABS.find((t) => t.key === tab).label}>
+        {tab === 'alerts' ? <AlertsTab /> : null}
+        {tab === 'people' ? <PeopleTab /> : null}
+        {tab === 'orgs' ? <OrgsTab /> : null}
+        {tab === 'reviews' ? <ReviewsTab /> : null}
+      </div>
     </div>
   )
 }
@@ -103,14 +119,6 @@ export function Admin() {
 /* ------------------------------------------------------------------ alerts */
 
 const ALERT_VIEWS = ['ACTIVE', 'RESOLVED', 'FLAGGED', 'ALL']
-
-const ALERT_STATUS_STYLE = {
-  ACTIVE: { background: 'var(--red)', color: '#fff' },
-  RESOLVED: { background: 'var(--bone-2)', color: 'var(--green)' },
-  FLAGGED: { background: 'var(--bone-2)', color: 'var(--muted)' },
-}
-
-const titleCase = (value) => value[0] + value.slice(1).toLowerCase()
 
 function AlertsTab() {
   const { flash, flashError } = useToast()
@@ -136,9 +144,6 @@ function AlertsTab() {
     }
   }
 
-  if (loading) return <Loading label="Loading alerts" />
-  if (error) return <ErrorState error={error} onRetry={reload} />
-
   const alerts = data?.alerts ?? []
 
   return (
@@ -156,13 +161,18 @@ function AlertsTab() {
         <div className="seg-row">
           {ALERT_VIEWS.map((v) => (
             <button key={v} className="seg" aria-pressed={view === v} onClick={() => setView(v)}>
-              {v === 'ALL' ? 'All' : titleCase(v)}
+              {v === 'ALL' ? 'All' : labelOf(ALERT_STATUS_LABEL, v)}
             </button>
           ))}
         </div>
       </div>
 
-      {alerts.length === 0 ? (
+      {/* only the results swap while a view loads; unmounting the filter row
+          would pull the segment the admin just pressed out from under them */}
+      {loading ? <Loading label="Loading alerts" /> : null}
+      {!loading && error ? <ErrorState error={error} onRetry={reload} /> : null}
+
+      {!loading && !error && alerts.length === 0 ? (
         <Empty>
           {view === 'ACTIVE'
             ? 'No active alerts. Quiet campus.'
@@ -172,7 +182,7 @@ function AlertsTab() {
         </Empty>
       ) : null}
 
-      {alerts.map((a) => (
+      {(error ? [] : alerts).map((a) => (
         <div
           key={a.id}
           className="card"
@@ -180,7 +190,7 @@ function AlertsTab() {
         >
           <div style={{ padding: 20, display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' }}>
             <div style={{ flex: '1 1 280px', minWidth: 0 }}>
-              <div style={{ fontFamily: 'var(--display)', fontWeight: 700, fontSize: 16.5 }}>
+              <div style={{ fontFamily: 'var(--display)', fontWeight: 700, fontSize: 19 }}>
                 <Link to={`/u/${a.user.id}`}>{a.user.name}</Link>
                 {a.user.universityId ? (
                   <span style={{ color: 'var(--muted-2)', fontWeight: 400 }}> · {a.user.universityId}</span>
@@ -197,15 +207,10 @@ function AlertsTab() {
               ) : null}
             </div>
             <span className="chip" style={ALERT_STATUS_STYLE[a.status]}>
-              {a.status}
+              {labelOf(ALERT_STATUS_LABEL, a.status)}
             </span>
             <span
-              className="chip"
-              style={
-                a.forwardedToPeer
-                  ? { background: 'var(--gold-wash)', color: 'var(--gold-ink)' }
-                  : { background: 'var(--red-wash)', color: 'var(--red)' }
-              }
+              className={`chip ${a.forwardedToPeer ? 'chip-reward' : 'chip-request'}`}
               title={
                 a.forwardedToPeer
                   ? 'The peer partner acknowledged this alert.'
@@ -213,7 +218,7 @@ function AlertsTab() {
               }
             >
               <Icon name={a.forwardedToPeer ? 'send' : 'sync'} size={13} />
-              {a.forwardedToPeer ? 'sent to partner' : 'retrying'}
+              {a.forwardedToPeer ? 'Sent to partner' : 'Retrying'}
             </span>
             {a.status === 'ACTIVE' && pending?.id !== a.id ? (
               <div style={{ display: 'flex', gap: 8 }}>
@@ -224,8 +229,7 @@ function AlertsTab() {
                   Resolve
                 </button>
                 <button
-                  className="btn btn-outline btn-sm"
-                  style={{ color: 'var(--red)' }}
+                  className="btn btn-outline-red btn-sm"
                   onClick={() => setPending({ id: a.id, status: 'FLAGGED' })}
                 >
                   Flag false alarm
@@ -239,7 +243,7 @@ function AlertsTab() {
                 message={
                   pending.status === 'RESOLVED'
                     ? 'Mark this alert resolved? It leaves the active queue.'
-                    : 'Flag as a false alarm? It leaves the active queue and is marked FLAGGED.'
+                    : 'Flag as a false alarm? It leaves the active queue and is marked as a false alarm.'
                 }
                 confirmLabel={pending.status === 'RESOLVED' ? 'Resolve' : 'Flag'}
                 tone={pending.status === 'RESOLVED' ? 'dark' : 'red'}
@@ -294,9 +298,6 @@ function PeopleTab() {
     else apply(user, nextRole)
   }
 
-  if (loading) return <Loading label="Loading people" />
-  if (error) return <ErrorState error={error} onRetry={reload} />
-
   const users = data?.users ?? []
 
   return (
@@ -313,16 +314,16 @@ function PeopleTab() {
         <Kicker>PEOPLE &amp; ROLES</Kicker>
         <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap' }}>
           <input
-            className="field"
-            style={{ width: 260, padding: '10px 13px' }}
+            className="field field-sm"
+            style={{ width: 260 }}
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search name, email, id"
             aria-label="Search users"
           />
           <select
-            className="field"
-            style={{ width: 160, padding: '10px 13px' }}
+            className="field field-sm"
+            style={{ width: 160 }}
             value={role}
             onChange={(e) => setRole(e.target.value)}
             aria-label="Filter by role"
@@ -330,18 +331,22 @@ function PeopleTab() {
             <option value="">All roles</option>
             {ROLES.map((r) => (
               <option key={r} value={r}>
-                {r}
+                {labelOf(ROLE_LABEL, r)}
               </option>
             ))}
           </select>
         </div>
       </div>
 
+      {/* only the results swap while a search or filter loads; unmounting the
+          search box would steal focus out from under whoever is typing in it */}
       <div className="card">
-        {users.length === 0 ? (
+        {loading ? <Loading label="Loading people" /> : null}
+        {!loading && error ? <ErrorState error={error} onRetry={reload} /> : null}
+        {!loading && !error && users.length === 0 ? (
           <Empty>Nobody matches. Service accounts never appear in this list.</Empty>
         ) : null}
-        {users.map((u, i) => (
+        {(error ? [] : users).map((u, i) => (
           <div
             key={u.id}
             style={{ borderBottom: i < users.length - 1 ? '1px solid var(--line-3)' : undefined }}
@@ -349,7 +354,7 @@ function PeopleTab() {
             <div style={{ padding: '15px 22px', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
               <Avatar name={u.name} size={36} />
               <div style={{ flex: 1, minWidth: 200 }}>
-                <div style={{ fontSize: 14.5, fontWeight: 700 }}>
+                <div style={{ fontFamily: 'var(--display)', fontSize: 14.5, fontWeight: 700 }}>
                   <Link to={`/u/${u.id}`}>{u.name}</Link>
                   {u.id === me.id ? (
                     <span style={{ color: 'var(--muted-2)', fontWeight: 500 }}> · you</span>
@@ -361,8 +366,8 @@ function PeopleTab() {
                 </div>
               </div>
               <select
-                className="field"
-                style={{ width: 140, padding: '9px 12px' }}
+                className="field field-sm"
+                style={{ width: 140 }}
                 value={u.role}
                 disabled={u.id === me.id || busyId === u.id}
                 title={u.id === me.id ? 'You cannot change your own role.' : undefined}
@@ -371,7 +376,7 @@ function PeopleTab() {
               >
                 {ROLES.map((r) => (
                   <option key={r} value={r}>
-                    {r}
+                    {labelOf(ROLE_LABEL, r)}
                   </option>
                 ))}
               </select>
@@ -400,10 +405,11 @@ function PeopleTab() {
             ) : null}
           </div>
         ))}
-        <div style={{ padding: '14px 22px', fontSize: 12.5, color: 'var(--muted-2)', lineHeight: 1.55 }}>
-          Newest 50 at most. Org membership is not a role: a member stays a student and gets org
-          powers through the membership record, managed on the Organizations tab.
-        </div>
+        {!loading && !error ? (
+          <div style={{ padding: '14px 22px', fontSize: 12.5, color: 'var(--muted-2)', lineHeight: 1.55 }}>
+            Newest 50 at most. Org membership is managed on the Organizations tab.
+          </div>
+        ) : null}
       </div>
     </section>
   )
@@ -462,7 +468,16 @@ function OrgsTab() {
               >
                 <span style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                   <span style={{ flex: 1, minWidth: 150 }}>
-                    <span style={{ display: 'block', fontSize: 14.5, fontWeight: 700 }}>{o.name}</span>
+                    <span
+                      style={{
+                        display: 'block',
+                        fontFamily: 'var(--display)',
+                        fontSize: 14.5,
+                        fontWeight: 700,
+                      }}
+                    >
+                      {o.name}
+                    </span>
                     {o.description ? (
                       <span
                         style={{
@@ -496,6 +511,7 @@ function OrgsTab() {
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Name"
+              aria-label="Organization name"
               maxLength={80}
               required
             />
@@ -504,6 +520,7 @@ function OrgsTab() {
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Description (optional)"
+              aria-label="Organization description"
               maxLength={500}
             />
             <button className="btn btn-primary btn-sm" type="submit" disabled={creating || !name.trim()}>
@@ -517,11 +534,7 @@ function OrgsTab() {
           {selectedId ? (
             <OrgDetail key={selectedId} orgId={selectedId} onChanged={orgsReq.reload} />
           ) : (
-            <div className="note-quiet">
-              Pick an organization to see and manage its members. Membership stays separate from
-              roles: a member keeps being a student and gets org powers through the membership
-              record, which also says which org they can act for.
-            </div>
+            <div className="note-quiet">Pick an organization to see and manage its members.</div>
           )}
         </section>
       </div>
@@ -539,6 +552,7 @@ function OrgDetail({ orgId, onChanged }) {
   const [description, setDescription] = useState('')
   const [saving, setSaving] = useState(false)
   const [removingId, setRemovingId] = useState(null)
+  const [pendingRemoval, setPendingRemoval] = useState(null) // member awaiting the confirm
 
   const startEdit = () => {
     setName(data.org.name)
@@ -571,6 +585,7 @@ function OrgDetail({ orgId, onChanged }) {
     try {
       await api.del(`/admin/orgs/${orgId}/members/${member.userId}`)
       flash(`${member.name} removed.`)
+      setPendingRemoval(null)
       reload()
       onChanged()
     } catch (err) {
@@ -609,7 +624,7 @@ function OrgDetail({ orgId, onChanged }) {
             maxLength={500}
           />
           <div style={{ display: 'flex', gap: 9 }}>
-            <button className="btn btn-primary btn-sm" type="submit" disabled={saving || !name.trim()}>
+            <button className="btn btn-dark btn-sm" type="submit" disabled={saving || !name.trim()}>
               {saving ? 'Saving…' : 'Save'}
             </button>
             <button className="btn btn-outline btn-sm" type="button" onClick={() => setEditing(false)}>
@@ -620,7 +635,7 @@ function OrgDetail({ orgId, onChanged }) {
       ) : (
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14 }}>
           <div>
-            <div style={{ fontFamily: 'var(--display)', fontWeight: 800, fontSize: 21 }}>{org.name}</div>
+            <div style={{ fontFamily: 'var(--display)', fontWeight: 800, fontSize: 19 }}>{org.name}</div>
             {org.description ? (
               <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 5, lineHeight: 1.55 }}>
                 {org.description}
@@ -642,32 +657,43 @@ function OrgDetail({ orgId, onChanged }) {
             Nobody yet. Add the first member below.
           </div>
         ) : null}
-        {members.map((m) => (
+        {members.map((m, i) => (
           <div
             key={m.userId}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 12,
-              padding: '9px 0',
-              borderBottom: '1px solid var(--line-3)',
-            }}
+            style={{ borderBottom: i < members.length - 1 ? '1px solid var(--line-3)' : undefined }}
           >
-            <Avatar name={m.name} size={30} />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <span style={{ fontSize: 13.5, fontWeight: 700 }}>
-                <Link to={`/u/${m.userId}`}>{m.name}</Link>
-              </span>
-              <span style={{ fontSize: 12, color: 'var(--muted-2)' }}> · {m.position}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '9px 0' }}>
+              <Avatar name={m.name} size={30} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ fontFamily: 'var(--display)', fontSize: 13.5, fontWeight: 700 }}>
+                  <Link to={`/u/${m.userId}`}>{m.name}</Link>
+                </span>
+                <span style={{ fontSize: 12, color: 'var(--muted-2)' }}> · {m.position}</span>
+              </div>
+              {pendingRemoval?.userId !== m.userId ? (
+                <button
+                  className="btn btn-outline-red btn-sm"
+                  disabled={removingId === m.userId}
+                  onClick={() => setPendingRemoval(m)}
+                >
+                  Remove
+                </button>
+              ) : null}
             </div>
-            <button
-              className="btn btn-outline btn-sm"
-              style={{ color: 'var(--red)' }}
-              disabled={removingId === m.userId}
-              onClick={() => removeMember(m)}
-            >
-              {removingId === m.userId ? 'Removing…' : 'Remove'}
-            </button>
+            {/* dropping a member is as destructive as a role change, so it gets
+                the same second look rather than going through on one click */}
+            {pendingRemoval?.userId === m.userId ? (
+              <div style={{ background: 'var(--bone)', padding: '10px 12px', marginBottom: 9 }}>
+                <Confirm
+                  message={`Remove ${m.name} from ${org.name}? They lose the powers the membership carries.`}
+                  confirmLabel="Remove"
+                  tone="red"
+                  busy={removingId === m.userId}
+                  onConfirm={() => removeMember(m)}
+                  onCancel={() => setPendingRemoval(null)}
+                />
+              </div>
+            ) : null}
           </div>
         ))}
       </div>
@@ -684,7 +710,7 @@ function MemberPicker({ orgId, memberIds, onAdded }) {
   const [position, setPosition] = useState('Member')
   const debouncedQ = useDebounced(q, 300)
   const trimmed = debouncedQ.trim()
-  const { data, loading } = useApi(
+  const { data, error, loading, reload } = useApi(
     () => (trimmed ? api.get(`/admin/users?q=${encodeURIComponent(trimmed)}`) : Promise.resolve(null)),
     [trimmed],
   )
@@ -726,16 +752,16 @@ function MemberPicker({ orgId, memberIds, onAdded }) {
       </div>
       <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap' }}>
         <input
-          className="field"
-          style={{ flex: '1 1 170px', padding: '10px 13px' }}
+          className="field field-sm"
+          style={{ flex: '1 1 170px' }}
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="Search by name, email, id"
           aria-label="Search users to add"
         />
         <input
-          className="field"
-          style={{ width: 150, padding: '10px 13px' }}
+          className="field field-sm"
+          style={{ width: 150 }}
           value={position}
           onChange={(e) => setPosition(e.target.value)}
           placeholder="Position"
@@ -746,12 +772,22 @@ function MemberPicker({ orgId, memberIds, onAdded }) {
       {trimmed && loading ? (
         <div style={{ fontSize: 12.5, color: 'var(--muted-2)' }}>Searching…</div>
       ) : null}
-      {trimmed && !loading && results.length === 0 ? (
+      {/* a failed search is not an empty search: saying "nobody found" here
+          would report a network fault as a fact about the directory */}
+      {trimmed && !loading && error ? (
+        <div style={{ fontSize: 12.5, color: 'var(--red)' }}>
+          The search did not come back.{' '}
+          <button type="button" className="btn btn-link" onClick={reload}>
+            Try again
+          </button>
+        </div>
+      ) : null}
+      {trimmed && !loading && !error && results.length === 0 ? (
         <div style={{ fontSize: 12.5, color: 'var(--muted-2)' }}>
           Nobody found, or everyone matching is already a member.
         </div>
       ) : null}
-      {results.map((u) => (
+      {(error ? [] : results).map((u) => (
         <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '5px 0' }}>
           <Avatar name={u.name} size={26} />
           <span style={{ flex: 1, minWidth: 0, fontSize: 13 }}>
@@ -785,7 +821,7 @@ function TagsCard() {
     setCreating(true)
     try {
       const { tag } = await api.post('/admin/tags', { name: name.trim(), category })
-      flash(`Tag "${tag.name}" added under ${titleCase(category)}.`)
+      flash(`Tag "${tag.name}" added under ${labelOf(TAG_CATEGORY_LABEL, category)}.`)
       setName('')
     } catch (err) {
       flashError(err)
@@ -808,14 +844,15 @@ function TagsCard() {
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="e.g. Data Analysis"
+          aria-label="Tag name"
           maxLength={40}
           required
         />
-        <button className="btn btn-primary btn-sm" type="submit" disabled={creating || !name.trim()}>
+        <button className="btn btn-dark btn-sm" type="submit" disabled={creating || !name.trim()}>
           {creating ? 'Creating…' : 'Create tag'}
         </button>
       </div>
-      <div className="seg-row">
+      <div className="seg-row" role="group" aria-label="Tag category">
         {TAG_CATEGORIES.map((c) => (
           <button
             key={c}
@@ -824,13 +861,9 @@ function TagsCard() {
             aria-pressed={category === c}
             onClick={() => setCategory(c)}
           >
-            {titleCase(c)}
+            {labelOf(TAG_CATEGORY_LABEL, c)}
           </button>
         ))}
-      </div>
-      <div style={{ fontSize: 12.5, color: 'var(--muted-2)', lineHeight: 1.55 }}>
-        Tags come from one fixed list so similar skills never split into copies that never match.
-        Duplicates are refused by the server.
       </div>
     </form>
   )
@@ -864,9 +897,6 @@ function ReviewsTab() {
     }
   }
 
-  if (loading) return <Loading label="Loading reviews" />
-  if (error) return <ErrorState error={error} onRetry={reload} />
-
   const reviews = data?.reviews ?? []
 
   return (
@@ -890,7 +920,12 @@ function ReviewsTab() {
         </div>
       </div>
 
-      {reviews.length === 0 ? (
+      {/* only the results swap while a view loads; the segment row above stays
+          put so the filter the admin just pressed is still there to press again */}
+      {loading ? <Loading label="Loading reviews" /> : null}
+      {!loading && error ? <ErrorState error={error} onRetry={reload} /> : null}
+
+      {!loading && !error && reviews.length === 0 ? (
         <Empty>
           {view === 'HIDDEN'
             ? 'No hidden review texts.'
@@ -900,7 +935,7 @@ function ReviewsTab() {
         </Empty>
       ) : null}
 
-      {reviews.length ? (
+      {!loading && !error && reviews.length ? (
         <div className="card">
           {reviews.map((r, i) => (
             <div
@@ -916,16 +951,26 @@ function ReviewsTab() {
             >
               <div style={{ flex: '1 1 340px', minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: 14, fontWeight: 700 }}>
+                  <span style={{ fontFamily: 'var(--display)', fontSize: 14, fontWeight: 700 }}>
                     {r.reviewer.name} <span style={{ color: 'var(--muted-2)', fontWeight: 400 }}>→</span>{' '}
                     {r.reviewee.name}
                   </span>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--gold)' }}>
-                    {'★'.repeat(r.rating)}
-                    {'☆'.repeat(5 - r.rating)}
+                  {/* the glyphs are decoration; the rating is read out once */}
+                  <span
+                    style={{ display: 'inline-flex', alignItems: 'center' }}
+                    aria-label={`${r.rating} out of 5`}
+                  >
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <Icon
+                        key={n}
+                        name={n <= r.rating ? 'star' : 'star_border'}
+                        size={15}
+                        color={n <= r.rating ? 'var(--gold)' : 'var(--line-control)'}
+                      />
+                    ))}
                   </span>
                   {r.textHidden ? (
-                    <span className="chip" style={{ background: 'var(--red-wash)', color: 'var(--red)' }}>
+                    <span className="chip chip-request">
                       <Icon name="visibility_off" size={13} />
                       hidden
                     </span>

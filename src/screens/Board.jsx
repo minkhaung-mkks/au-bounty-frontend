@@ -53,13 +53,13 @@ export function Board() {
         >
           <div>
             <h1 className="display">Bounty board</h1>
-            <p className="page-sub">
+            <p className="page-sub" aria-live="polite">
               {loading
                 ? 'Loading…'
                 : `${tasks.length} open · ${data?.ranked ? 'ranked by your skill tags' : 'newest first'}`}
             </p>
           </div>
-          <div className="seg-row">
+          <div className="seg-row" role="group" aria-label="Filter the board">
             {TABS.map((t) => (
               <button
                 key={t.key}
@@ -94,7 +94,10 @@ export function Board() {
         ) : null}
       </div>
 
-      <div style={{ width: 330, flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div
+        className="rail"
+        style={{ width: 330, flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: 16 }}
+      >
         <div className="panel-dark" style={{ padding: 22 }}>
           <Kicker gold>YOUR RECORD</Kicker>
           <div style={{ display: 'flex', gap: 22, marginTop: 14 }}>
@@ -129,10 +132,6 @@ export function Board() {
           <button className="btn btn-outline btn-sm" onClick={() => setTab('Matches')}>
             Show tasks that match
           </button>
-          <div style={{ fontSize: 12.5, color: 'var(--muted-2)', lineHeight: 1.55 }}>
-            Ranking happens on the server: it counts how many of a task's tags you also have, and
-            sorts by that.
-          </div>
         </div>
 
         {latestEmergency ? (
@@ -170,7 +169,7 @@ export function Board() {
               {latestEmergency.title}
             </span>
             <span style={{ fontSize: 12.5, color: 'var(--red-soft)' }}>
-              {latestEmergency.location.name} · posted by {latestEmergency.poster.name}
+              {latestEmergency.location.name ?? 'No location'} · posted by {latestEmergency.poster.name}
             </span>
           </button>
         ) : null}

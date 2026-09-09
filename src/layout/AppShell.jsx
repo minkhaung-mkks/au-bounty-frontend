@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../api.js'
 import { useSession } from '../session.jsx'
-import { Icon } from '../components/ui.jsx'
+import { Icon, Mark } from '../components/ui.jsx'
 import { EmergencyBanner } from '../components/EmergencyBanner.jsx'
-import { initials } from '../lib/format.js'
+import { ROLE_LABEL, initials, labelOf } from '../lib/format.js'
 import { useSocketEvent, useSocketSession } from '../lib/socket.js'
 import { reloadThreadsSoon, threadsStore, totalUnread, useThreads } from '../lib/threads.js'
 
@@ -98,32 +98,16 @@ export function AppShell({ children }) {
     if (!onBoard) navigate(query.trim() ? `/?q=${encodeURIComponent(query.trim())}` : '/')
   }
 
-  const roleLine = orgs.length ? `${me.role} · ${orgs[0].name}` : me.role
+  const roleLine = orgs.length
+    ? `${labelOf(ROLE_LABEL, me.role)} · ${orgs[0].name}`
+    : labelOf(ROLE_LABEL, me.role)
 
   return (
     <div className="shell">
       <EmergencyBanner />
       <aside className="sidebar">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div
-            style={{
-              position: 'relative',
-              width: 42,
-              height: 42,
-              borderRadius: '50%',
-              background: 'var(--red)',
-              boxShadow: 'inset 0 0 0 3px var(--ink), inset 0 0 0 5px var(--gold)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flex: '0 0 auto',
-              fontFamily: 'var(--display)',
-              fontWeight: 800,
-              fontSize: 15,
-            }}
-          >
-            AU
-          </div>
+          <Mark size={42} />
           <span
             className="hide-narrow"
             style={{
@@ -164,7 +148,7 @@ export function AppShell({ children }) {
 
         <button
           className="btn btn-outline-dark btn-block"
-          style={{ color: '#ff8a8a', fontSize: 13 }}
+          style={{ color: 'var(--red-soft-2)', fontSize: 13 }}
           onClick={() => navigate('/emergency')}
         >
           <Icon name="emergency" size={18} />
@@ -199,7 +183,9 @@ export function AppShell({ children }) {
               >
                 {me.name}
               </div>
-              <div style={{ fontSize: 11, color: 'var(--muted-2)' }}>{roleLine}</div>
+              {/* muted-3 is the ink-surface step; muted-2 is tuned for paper
+                  and goes muddy against the sidebar. */}
+              <div style={{ fontSize: 11, color: 'var(--muted-3)' }}>{roleLine}</div>
             </div>
           </div>
           <button
@@ -218,7 +204,7 @@ export function AppShell({ children }) {
       <main className="main">
         <div className="topbar">
           <form className="searchbox" onSubmit={submitSearch}>
-            <Icon name="search" size={19} color="var(--muted-3)" />
+            <Icon name="search" size={19} color="var(--muted-2)" />
             <input
               value={query}
               onChange={(e) => onSearchChange(e.target.value)}
@@ -240,28 +226,16 @@ export function AppShell({ children }) {
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 18 }}>
             {weather ? (
               <span
+                className="topbar-weather"
                 title={`Live campus weather · ${weather.label} · refreshed every 10 minutes`}
-                style={{
-                  fontSize: 12.5,
-                  color: 'var(--muted)',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 7,
-                }}
               >
                 <Icon name="rainy" size={18} color="var(--gold)" />
                 {Math.round(weather.temperatureC)}° {weather.label} · {weather.locationLabel}
               </span>
             ) : (
               <span
+                className="topbar-weather"
                 title="Static placeholder. Live weather is unavailable right now."
-                style={{
-                  fontSize: 12.5,
-                  color: 'var(--muted)',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 7,
-                }}
               >
                 <Icon name="rainy" size={18} color="var(--gold)" />
                 31° Bang Na

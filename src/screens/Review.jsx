@@ -91,7 +91,7 @@ export function Review() {
           </div>
         </div>
       ) : (
-        <div className="card" style={{ padding: 34, display: 'flex', flexDirection: 'column', gap: 26 }}>
+        <div className="card pad-lg" style={{ padding: 34, display: 'flex', flexDirection: 'column', gap: 26 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 15 }}>
             <Avatar name={name} size={54} />
             <div>
@@ -103,26 +103,42 @@ export function Review() {
           </div>
 
           <div>
-            <div className="label">RATING</div>
-            <div style={{ display: 'flex', gap: 10 }}>
+            <div className="label" id="review-rating-label">
+              RATING
+            </div>
+            <div
+              style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}
+              role="group"
+              aria-labelledby="review-rating-label"
+            >
               {[1, 2, 3, 4, 5].map((n) => (
                 <button
                   key={n}
                   type="button"
                   onClick={() => setStars(n)}
                   aria-label={`${n} star${n > 1 ? 's' : ''}`}
+                  aria-pressed={n === stars}
                   style={{ border: 0, background: 'transparent', padding: 0, cursor: 'pointer', display: 'flex' }}
                 >
-                  <Icon name="star" size={46} color={n <= stars ? 'var(--gold)' : '#ded5c8'} />
+                  <Icon
+                    name={n <= stars ? 'star' : 'star_border'}
+                    size={44}
+                    color={n <= stars ? 'var(--gold)' : 'var(--line-control)'}
+                  />
                 </button>
               ))}
             </div>
-            <div style={{ fontSize: 13.5, color: 'var(--muted)', marginTop: 10 }}>{STAR_LABEL[stars]}</div>
+            <div style={{ fontSize: 13.5, color: 'var(--muted)', marginTop: 10 }} aria-live="polite">
+              {STAR_LABEL[stars]}
+            </div>
           </div>
 
           <div>
-            <div className="label">WHAT HAPPENED</div>
+            <label className="label" htmlFor="review-text">
+              WHAT HAPPENED
+            </label>
             <textarea
+              id="review-text"
               className="field"
               rows={5}
               value={text}
@@ -132,8 +148,8 @@ export function Review() {
           </div>
 
           <div className="note">
-            <strong>Double-blind.</strong> Ratings do not update until 1 day after both sides submit,
-            or 7 days after only one side has. Nobody can rate you back out of spite.
+            Your rating stays sealed until 1 day after {name} submits theirs, or 7 days if they
+            never do.
           </div>
 
           <button

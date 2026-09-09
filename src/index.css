@@ -26,12 +26,18 @@
   --line: #e3dbd0;
   --line-2: #efe8de;
   --line-3: #f3ede5;
+  /* The edge of a control, where the border is the affordance rather than a
+     divider. Dark enough to clear 3:1 against both bone and white. */
+  --line-control: #928d85;
 
+  /* Two ramps, because one grey cannot serve both grounds. muted/muted-2 are
+     the light-surface text steps (>=4.5:1 on bone and white); muted-3/muted-4
+     are the ink-surface steps and are unreadable on paper. */
   --muted: #6a6157;
-  --muted-2: #8a8177;
+  --muted-2: #787068;
   --muted-3: #b7ada0;
   --muted-4: #c7beb2;
-  --green: #2e7d4f;
+  --green: #2c784c;
 
   --display: 'Bricolage Grotesque', system-ui, sans-serif;
   --body: 'Archivo', system-ui, sans-serif;
@@ -41,6 +47,12 @@
 
 * {
   box-sizing: border-box;
+}
+
+html {
+  /* The board is paper. Tell the browser so its own widgets do not invert. */
+  color-scheme: light;
+  scrollbar-color: var(--line) var(--bone-2);
 }
 
 body {
@@ -59,12 +71,83 @@ a:hover {
   color: var(--red-dark);
 }
 
+/* ------------------------------------------------------- browser surfaces */
+
+/* The parts nobody draws still belong to the design: selection, caret,
+   scrollbar track, focus ring, native control accents. */
+::selection {
+  background: var(--red-soft);
+  color: var(--ink);
+}
+input,
+textarea,
+select {
+  caret-color: var(--red);
+  accent-color: var(--red);
+}
+input[type='checkbox'],
+input[type='radio'] {
+  accent-color: var(--red);
+}
+
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
+::-webkit-scrollbar-track {
+  background: var(--bone-2);
+}
 ::-webkit-scrollbar-thumb {
   background: var(--line);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--line-control);
+}
+
+/* One square ring, stamped in seal red. Gold on ink surfaces, white on red,
+   because the red ring disappears into both. */
+:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
+}
+.sidebar :focus-visible,
+.panel-dark :focus-visible,
+.toast :focus-visible,
+.field-on-dark:focus-visible {
+  outline-color: var(--gold-light);
+}
+.emergency-banner :focus-visible,
+.chip-emergency :focus-visible {
+  outline-color: #fff;
+}
+/* The alert button is a circle; its ring follows the shape. */
+.alert-pulse:focus-visible {
+  outline-offset: 4px;
+}
+
+/* For text that only a screen reader needs: the destination of a link that
+   opens a new tab, the unit behind a number. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Counts, times, codes and money line up in columns. */
+.stat-num,
+.nav-badge,
+.unread-badge,
+.attach-size,
+.task-meta,
+.eb-meta,
+.tabular {
+  font-variant-numeric: tabular-nums;
 }
 
 @keyframes fadeUp {
@@ -162,6 +245,12 @@ h1.display {
   background: var(--gold-wash);
   color: var(--gold-ink);
 }
+/* A chip carrying free text — a reward the poster typed — has to be allowed
+   to wrap. The short status and type chips keep their single line. */
+.chip-long {
+  white-space: normal;
+  text-align: left;
+}
 .chip-skill {
   background: var(--red-wash);
   color: var(--red);
@@ -226,7 +315,7 @@ h1.display {
   background: #fff;
 }
 .btn-outline {
-  border-color: var(--line);
+  border-color: var(--line-control);
   background: #fff;
   color: var(--muted);
 }
@@ -261,6 +350,16 @@ h1.display {
   font-size: 13px;
   gap: 6px;
 }
+/* Seal red vanishes into an ink panel; gold is the link colour there. */
+.btn-link-gold {
+  padding: 0;
+  color: var(--gold-light);
+  font-size: 13px;
+  gap: 6px;
+}
+.btn-link-gold:hover:not(:disabled) {
+  color: #fff;
+}
 .btn-block {
   width: 100%;
 }
@@ -271,7 +370,7 @@ h1.display {
   font-size: 12.5px;
   font-weight: 700;
   padding: 9px 14px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-control);
   background: #fff;
   color: var(--muted);
   cursor: pointer;
@@ -291,6 +390,19 @@ h1.display {
 }
 
 /* --------------------------------------------------------------- panels */
+
+/* A flex item with a pixel flex-basis refuses to shrink below its own content
+   unless min-width says otherwise, which is how a 380px card ends up wider
+   than the phone holding it. Every panel here may shrink; the basis is a
+   preference, not a floor. */
+.card,
+.panel-dark,
+.state,
+.note,
+.note-quiet,
+.row > * {
+  min-width: 0;
+}
 
 .card {
   background: #fff;
@@ -319,6 +431,26 @@ h1.display {
   line-height: 1.6;
   color: var(--muted);
 }
+/* The brass-edged plate that states where an assignment or seat stands. Used
+   on ink panels in place of a button when there is nothing to press. */
+.plate-gold {
+  border: 1px solid var(--gold);
+  padding: 14px;
+  text-align: center;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--gold-light);
+}
+/* The same plate for a state nobody is waiting on. */
+.plate-quiet {
+  border: 1px solid var(--ink-4);
+  padding: 14px;
+  text-align: center;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--muted-3);
+}
+
 .stat-num {
   font-family: var(--display);
   font-weight: 800;
@@ -328,13 +460,18 @@ h1.display {
   font-size: 11.5px;
   color: var(--muted-2);
 }
+/* Every stat block in the app sits on ink, where the paper-tuned muted-2 falls
+   to 3.7:1. The Two-Ground Rule: swap the token with the ground. */
+.panel-dark .stat-cap {
+  color: var(--muted-3);
+}
 
 /* --------------------------------------------------------------- fields */
 
 .field {
   width: 100%;
   background: var(--bone);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-control);
   padding: 14px;
   font-family: var(--body);
   font-size: 14px;
@@ -344,9 +481,44 @@ h1.display {
 .field:focus {
   border-color: var(--red);
 }
+.field::placeholder {
+  color: var(--muted-2);
+}
+.field:disabled {
+  background: var(--bone-2);
+  color: var(--muted-2);
+  cursor: not-allowed;
+}
 textarea.field {
   resize: vertical;
   line-height: 1.55;
+}
+/* Denser field for admin tables and inline edit rows. */
+.field-sm {
+  padding: 10px 13px;
+  font-size: 13px;
+}
+/* The same field on an ink panel: the check-in code box, mostly. */
+.field-on-dark {
+  background: var(--ink-2);
+  border-color: var(--ink-4);
+  color: #fff;
+}
+.field-on-dark::placeholder {
+  color: var(--muted-3);
+}
+.field-on-dark:focus {
+  border-color: var(--gold);
+}
+/* A native select still ships a native arrow; draw ours instead. */
+select.field {
+  appearance: none;
+  padding-right: 38px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 19px) calc(50% + 2px), calc(100% - 13px) calc(50% + 2px);
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
 }
 
 /* -------------------------------------------------------------- avatars */
@@ -376,37 +548,6 @@ textarea.field {
 .state-error {
   border-left: 3px solid var(--red);
   color: var(--red-dark);
-}
-
-.skeleton {
-  background: linear-gradient(90deg, var(--line-3), var(--bone-2), var(--line-3));
-  background-size: 200% 100%;
-  animation: shimmer 1.3s linear infinite;
-}
-@keyframes shimmer {
-  from {
-    background-position: 200% 0;
-  }
-  to {
-    background-position: -200% 0;
-  }
-}
-
-/* Marks a screen whose backend does not exist yet in v0.5. */
-.stub-banner {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  background: var(--ink);
-  color: var(--gold-light);
-  padding: 13px 18px;
-  font-size: 12.5px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-}
-.stub-banner span.body {
-  color: var(--muted-3);
-  font-weight: 400;
 }
 
 /* ---------------------------------------------------------------- toast */
@@ -505,6 +646,10 @@ textarea.field {
   display: block;
   width: 100%;
   font-family: var(--body);
+  color: inherit;
+}
+.thread-row:last-child {
+  border-bottom: 0;
 }
 .thread-row:hover {
   background: var(--bone-2);
@@ -520,6 +665,109 @@ textarea.field {
   background: var(--red);
   color: #fff;
   padding: 2px 7px;
+}
+
+/* ------------------------------------------------------- message bubbles */
+
+/* Square, never rounded. The sender's own line is the one solid red surface
+   outside an emergency; everyone else's is paper with a hairline. */
+.msg-bubble {
+  max-width: 64%;
+  padding: 13px 16px;
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.msg-own {
+  align-self: flex-end;
+  background: var(--red);
+  border: 0;
+  color: #fff;
+}
+.msg-other {
+  align-self: flex-start;
+  background: #fff;
+  border: 1px solid var(--line);
+  color: inherit;
+}
+.msg-time {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 5px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.msg-own .msg-time {
+  justify-content: flex-end;
+}
+/* The read tick rides at the end of the sender's timestamp row. */
+.msg-read {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.msg-own .msg-time {
+  color: var(--red-soft-2);
+}
+.msg-other .msg-time {
+  color: var(--muted-2);
+}
+@media (max-width: 900px) {
+  .msg-bubble {
+    max-width: 85%;
+  }
+}
+
+/* ---------------------------------------------------------------- login */
+
+/* Two panels on a laptop, one column on a phone. The hero keeps its content
+   on both; it just stops being a wall. */
+.login-split {
+  min-height: 100vh;
+  display: flex;
+  background: var(--bone);
+}
+.login-hero {
+  flex: 1.1;
+  background: var(--red);
+  color: #fff;
+  padding: 68px 72px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 48px;
+  position: relative;
+  overflow: hidden;
+}
+.login-title {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: clamp(38px, 6.4vw, 66px);
+  line-height: 0.96;
+  letter-spacing: -0.04em;
+  margin: 0;
+}
+.login-panel {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 60px;
+}
+@media (max-width: 900px) {
+  .login-split {
+    flex-direction: column;
+  }
+  .login-hero {
+    padding: 34px 22px 38px;
+    gap: 30px;
+  }
+  .login-panel {
+    padding: 34px 22px 56px;
+    align-items: flex-start;
+  }
 }
 
 /* ----------------------------------------------------------- app layout */
@@ -578,7 +826,7 @@ textarea.field {
   background: var(--ink);
 }
 .main {
-  flex: 1;
+  flex: 1 1 0;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -593,16 +841,40 @@ textarea.field {
   position: sticky;
   top: 0;
   z-index: 5;
+  min-width: 0;
 }
 .searchbox {
-  flex: 1;
+  flex: 1 1 0;
+  /* A flex item will not shrink below its content unless told to, and the
+     input inside is what pushes the whole top bar past a phone's width. */
+  min-width: 0;
   max-width: 520px;
   background: #fff;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-control);
   padding: 11px 14px;
   display: flex;
   align-items: center;
   gap: 10px;
+}
+.searchbox input {
+  min-width: 0;
+}
+
+/* The live weather reading. Owns its own display so the narrow rule can drop
+   it; an inline display would outrank the media query. */
+.topbar-weather {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.searchbox:focus-within {
+  border-color: var(--red);
+}
+.searchbox input::placeholder {
+  color: var(--muted-2);
 }
 .searchbox input {
   flex: 1;
@@ -622,7 +894,9 @@ textarea.field {
 
 .board-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  /* min() keeps the 330px card floor on a laptop without forcing a phone
+     narrower than 330px to scroll sideways. */
+  grid-template-columns: repeat(auto-fill, minmax(min(330px, 100%), 1fr));
   gap: 16px;
 }
 .task-card {
@@ -755,6 +1029,30 @@ textarea.field {
     padding-left: 18px;
     padding-right: 18px;
   }
+  .topbar {
+    gap: 12px;
+  }
+  /* The weather chip is the first thing to go when the bar runs out of room;
+     the search field and the two account controls are the working parts. */
+  .topbar-weather {
+    display: none;
+  }
+  /* Below this, a search field narrower than its placeholder is just an icon. */
+  .searchbox {
+    flex: 1 1 160px;
+    padding: 10px 12px;
+  }
+  /* Every screen's rail is a column of its own below this width, never a
+     fixed-width neighbour squeezing the content pane to nothing. */
+  .rail {
+    width: auto !important;
+    flex: 1 1 100% !important;
+    max-width: none !important;
+  }
+  .card-pad,
+  .pad-lg {
+    padding: 18px;
+  }
 }
 
 /* ------------------------------------------------- emergency alert button */
@@ -790,10 +1088,16 @@ textarea.field {
   padding: 8px 18px;
 }
 
+/* Motion here only ever confirms something. Asked to stop, it all stops —
+   including entrances declared inline, which a class-by-class list misses. */
 @media (prefers-reduced-motion: reduce) {
-  .spin,
-  .alert-pulse {
-    animation: none;
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 
@@ -805,11 +1109,13 @@ textarea.field {
   flex-direction: column;
   gap: 5px;
   max-width: 100%;
+  min-width: 0;
 }
 .attach-list {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  min-width: 0;
 }
 .attach-chip {
   display: inline-flex;
@@ -818,7 +1124,9 @@ textarea.field {
   background: #fff;
   border: 1px solid var(--line);
   padding: 7px 10px;
-  max-width: 330px;
+  /* A long file name must ellipsize rather than push the card off a phone. */
+  max-width: min(330px, 100%);
+  min-width: 0;
   font-size: 12.5px;
 }
 .attach-chip .ms {
@@ -889,7 +1197,8 @@ textarea.field {
   border-left: 3px solid var(--line);
   background: #fff;
   padding: 10px 12px;
-  max-width: 360px;
+  max-width: min(360px, 100%);
+  min-width: 0;
 }
 .attach-row .attach-error {
   margin-top: 4px;
@@ -902,8 +1211,60 @@ textarea.field {
   background: var(--line-2);
   margin-top: 7px;
 }
+/* The fill is scaled, not resized: animating width relayouts the row on every
+   progress tick, and a solid bar looks identical either way. */
 .attach-bar-fill {
   height: 100%;
+  width: 100%;
+  transform-origin: left center;
   background: var(--red);
-  transition: width 0.15s ease;
+  transition: transform 0.15s ease;
+}
+
+/* Place autocomplete under the create form's name field. A dropped panel, not
+   a floating card: same square edge and bone ground as the field it extends. */
+.suggest-wrap {
+  position: relative;
+}
+.suggest {
+  position: absolute;
+  z-index: 30;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 264px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid var(--line-control);
+  border-top: none;
+}
+.suggest-option {
+  padding: 11px 14px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--line-2);
+}
+.suggest-option:last-child {
+  border-bottom: none;
+}
+.suggest-option:hover,
+.suggest-option[aria-selected='true'] {
+  background: var(--bone-2);
+}
+.suggest-main {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.suggest-sub {
+  font-size: 12px;
+  color: var(--muted-2);
+  margin-top: 2px;
+}
+.suggest-note {
+  padding: 11px 14px;
+  font-size: 12.5px;
+  color: var(--muted-2);
 }

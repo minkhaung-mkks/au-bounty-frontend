@@ -23,13 +23,60 @@ const byCheckinTime = (a, b) => (b.checkedInAt ?? '').localeCompare(a.checkedInA
 
 const QrCanvas = ({ value, size = 176 }) => {
   const ref = useRef(null)
+  // A swallowed render leaves a blank white square that reads as "scan me" and
+  // never resolves, so a failure says so and falls back to the number.
+  const [failed, setFailed] = useState(false)
   useEffect(() => {
-    if (!ref.current || !value) return
-    QRCode.toCanvas(ref.current, value, { width: size, margin: 1 }).catch(() => {})
+    if (!ref.current || !value) return undefined
+    let cancelled = false
+    QRCode.toCanvas(ref.current, value, { width: size, margin: 1 })
+      .then(() => !cancelled && setFailed(false))
+      .catch(() => !cancelled && setFailed(true))
+    return () => {
+      cancelled = true
+    }
   }, [value, size])
   return (
-    <div style={{ background: '#fff', padding: 14, display: 'inline-flex', lineHeight: 0 }}>
-      <canvas ref={ref} width={size} height={size} aria-label={`QR code ${value}`} />
+    <div
+      style={{
+        background: '#fff',
+        padding: 14,
+        display: 'inline-flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: 8,
+        lineHeight: 0,
+      }}
+    >
+      {/* the canvas stays mounted while the fallback shows, so the next
+          rotation can draw into it and clear the failure on its own */}
+      <canvas
+        ref={ref}
+        width={size}
+        height={size}
+        role="img"
+        aria-label={`QR code ${value}`}
+        hidden={failed}
+      />
+      {failed ? (
+        <div style={{ width: size, textAlign: 'center', lineHeight: 1.5 }}>
+          <div
+            className="tabular"
+            style={{
+              fontFamily: 'var(--display)',
+              fontWeight: 800,
+              fontSize: 30,
+              letterSpacing: '0.16em',
+              color: 'var(--ink)',
+            }}
+          >
+            {value}
+          </div>
+          <div style={{ fontSize: 11.5, color: 'var(--muted-2)', marginTop: 6 }}>
+            QR code unavailable — read the number aloud
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -39,23 +86,11 @@ function EventRow({ icon, title, meta, right, onClick }) {
   return (
     <button
       type="button"
+      className="thread-row"
       onClick={onClick}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 14,
-        width: '100%',
-        padding: '15px 4px',
-        borderBottom: '1px solid var(--line-3)',
-        background: 'transparent',
-        borderLeft: 0,
-        borderRight: 0,
-        borderTop: 0,
-        cursor: 'pointer',
-        textAlign: 'left',
-        fontFamily: 'var(--body)',
-        flexWrap: 'wrap',
-      }}
+      // the row already sits inside a padded card, so only the layout it needs
+      // beyond .thread-row's block box stays inline
+      style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '15px 4px', flexWrap: 'wrap' }}
     >
       <Icon name={icon} size={24} color="var(--gold)" />
       <span style={{ flex: 1, minWidth: 180 }}>
@@ -81,6 +116,7 @@ function EventRow({ icon, title, meta, right, onClick }) {
 function useCheckinCode(taskId) {
   const [state, setState] = useState(null) // { code, remainingSeconds, periodSeconds, fetchedAt }
   const [error, setError] = useState(null)
+  const [refetchFailed, setRefetchFailed] = useState(false)
   const [tick, setTick] = useState(0)
   const hasCode = useRef(false)
   const inFlight = useRef(false)
@@ -96,10 +132,13 @@ function useCheckinCode(taskId) {
       hasCode.current = true
       setState({ ...payload, fetchedAt: Date.now() })
       setError(null)
+      setRefetchFailed(false)
     } catch (err) {
       // Nothing on screen yet: a hard error the organizer can read. Something
-      // on screen: ride out the hiccup until the next boundary retries.
+      // on screen: ride out the hiccup until the next boundary retries, but
+      // remember it failed so the code can admit it once the window is up.
       if (!hasCode.current) setError(err)
+      else setRefetchFailed(true)
     } finally {
       inFlight.current = false
     }
@@ -109,6 +148,7 @@ function useCheckinCode(taskId) {
     hasCode.current = false
     setState(null)
     setError(null)
+    setRefetchFailed(false)
     fetchCode()
   }, [fetchCode])
 
@@ -136,7 +176,11 @@ function useCheckinCode(taskId) {
     if (dueForRotationFetch) fetchCode()
   }, [dueForRotationFetch, tick, fetchCode])
 
-  return { state, remaining, error, refetch: fetchCode }
+  // The window is up and the refetch that should have replaced this code did
+  // not land, so what is on the wall is very likely already rejected.
+  const stale = refetchFailed && remaining <= 0
+
+  return { state, remaining, error, stale, refetch: fetchCode }
 }
 
 /* ----------------------------------------------------------------- picker */
@@ -202,11 +246,11 @@ function AttendeeCheckin({ reserved, eventId, onPick, onClear, onCheckedIn }) {
               key={a.id}
               icon="qr_code_2"
               title={t.title}
-              meta={`${t.startsAt ? dateTime(t.startsAt) : 'Date to be announced'} · ${t.location.name}`}
+              meta={`${t.startsAt ? dateTime(t.startsAt) : 'Date to be announced'} · ${t.location.name ?? 'No location'}`}
               right={
                 isCheckedIn(a) ? (
-                  <span className="chip" style={{ background: 'var(--gold-wash)', color: 'var(--gold-ink)' }}>
-                    <Icon name="check" size={13} color="var(--green)" />
+                  <span className="chip chip-reward">
+                    <Icon name="check" size={13} />
                     Checked in {a.checkedInAt ? timeOnly(a.checkedInAt) : ''}
                   </span>
                 ) : (
@@ -254,10 +298,10 @@ function AttendeeCheckin({ reserved, eventId, onPick, onClear, onCheckedIn }) {
   return (
     <div className="row">
       <div
-        className="panel-dark"
+        className="panel-dark rail"
         style={{
-          flex: '0 0 auto',
-          width: 400,
+          flex: '1 1 340px',
+          maxWidth: 400,
           padding: 34,
           display: 'flex',
           flexDirection: 'column',
@@ -268,7 +312,7 @@ function AttendeeCheckin({ reserved, eventId, onPick, onClear, onCheckedIn }) {
         {confirmedPanel ? (
           <>
             <Kicker gold>ATTENDANCE VERIFIED</Kicker>
-            <Icon name="check_circle" size={64} color="var(--green)" />
+            <Icon name="check_circle" size={64} color="var(--gold-light)" />
             <div style={{ textAlign: 'center' }}>
               <div style={{ fontFamily: 'var(--display)', fontWeight: 800, fontSize: 24 }}>
                 {task.title}
@@ -283,8 +327,7 @@ function AttendeeCheckin({ reserved, eventId, onPick, onClear, onCheckedIn }) {
               className="note"
               style={{ width: '100%', fontSize: 12.5, textAlign: 'center' }}
             >
-              Attendance was verified with the rotating code. Show this screen if anyone asks at
-              the door.
+              Show this screen if anyone asks at the door.
             </div>
             <button type="button" className="btn btn-bone btn-block" onClick={onClear}>
               Check in to another event
@@ -299,12 +342,12 @@ function AttendeeCheckin({ reserved, eventId, onPick, onClear, onCheckedIn }) {
               </div>
               <div style={{ fontSize: 12.5, color: 'var(--muted-3)', marginTop: 5 }}>
                 {task.startsAt ? dateTime(task.startsAt) : 'Date to be announced'} ·{' '}
-                {task.location.name}
+                {task.location.name ?? 'No location'}
               </div>
             </div>
             <form onSubmit={submit} style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 14 }}>
               <input
-                className="field"
+                className="field field-on-dark tabular"
                 value={code}
                 onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                 inputMode="numeric"
@@ -313,9 +356,6 @@ function AttendeeCheckin({ reserved, eventId, onPick, onClear, onCheckedIn }) {
                 autoFocus
                 aria-label="6-digit check-in code"
                 style={{
-                  background: 'var(--ink-2)',
-                  border: '1px solid var(--ink-4)',
-                  color: '#fff',
                   textAlign: 'center',
                   fontFamily: 'var(--display)',
                   fontWeight: 800,
@@ -329,7 +369,7 @@ function AttendeeCheckin({ reserved, eventId, onPick, onClear, onCheckedIn }) {
                   role="alert"
                   style={{
                     border: '1px solid var(--red-bright)',
-                    background: 'rgba(166, 25, 46, 0.25)',
+                    background: 'color-mix(in srgb, var(--red) 25%, transparent)',
                     color: 'var(--red-soft-2)',
                     fontSize: 13,
                     lineHeight: 1.55,
@@ -351,7 +391,7 @@ function AttendeeCheckin({ reserved, eventId, onPick, onClear, onCheckedIn }) {
               The organizer's code rotates every 60 seconds. A code that has just been replaced is
               rejected.
             </div>
-            <button type="button" className="btn btn-link" style={{ color: 'var(--gold-light)' }} onClick={onClear}>
+            <button type="button" className="btn btn-link-gold" onClick={onClear}>
               Pick a different event
             </button>
           </>
@@ -359,10 +399,6 @@ function AttendeeCheckin({ reserved, eventId, onPick, onClear, onCheckedIn }) {
       </div>
 
       <div style={{ flex: '1 1 340px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <div className="note" style={{ padding: 24, fontSize: 14 }}>
-          The code changes every 60 seconds and is derived from the event's stored secret, so a
-          screenshot passed to a friend outside the venue expires before it can be used.
-        </div>
         <div className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <Kicker>WHAT YOU GET</Kicker>
           <div style={{ display: 'flex', alignItems: 'center', gap: 13 }}>
@@ -393,7 +429,7 @@ function OrganizerCheckin({ myEvents, eventId, onPick, onClear }) {
     () => (eventId ? api.get(`/tasks/${eventId}`) : Promise.resolve(null)),
     [eventId],
   )
-  const { state, remaining, error, refetch } = useCheckinCode(eventId)
+  const { state, remaining, error, stale, refetch } = useCheckinCode(eventId)
   const reloadTimer = useRef(null)
 
   const task = detail.data?.task ?? myEvents.find((t) => t.id === eventId) ?? null
@@ -432,7 +468,7 @@ function OrganizerCheckin({ myEvents, eventId, onPick, onClear }) {
               key={t.id}
               icon="event"
               title={t.title}
-              meta={`${t.startsAt ? dateTime(t.startsAt) : 'Date to be announced'} · ${t.location.name} · ${t.takenCount}/${t.maxTakers} seats`}
+              meta={`${t.startsAt ? dateTime(t.startsAt) : 'Date to be announced'} · ${t.location.name ?? 'No location'} · ${t.takenCount}/${t.maxTakers} seats`}
               right={<span style={{ fontSize: 13, fontWeight: 700, color: 'var(--red)' }}>Show code →</span>}
               onClick={() => onPick(t.id)}
             />
@@ -442,9 +478,27 @@ function OrganizerCheckin({ myEvents, eventId, onPick, onClear }) {
     )
   }
 
-  if (detail.loading || (detail.data === null && !detail.error)) return <Loading label="Loading event" />
+  if (detail.loading && !detail.data) return <Loading label="Loading event" />
   if (detail.error) return <ErrorState error={detail.error} onRetry={detail.reload} />
-  if (!task) return <ErrorState error={{ message: 'Event not found.' }} onRetry={detail.reload} />
+  if (!task) {
+    // Retrying a link that names an event this organizer does not own will
+    // fail the same way forever, so the way out is another event.
+    return (
+      <div className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ fontFamily: 'var(--display)', fontWeight: 800, fontSize: 19 }}>
+          That event is not one you organize, or it was deleted.
+        </div>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <button type="button" className="btn btn-dark btn-sm" onClick={onClear}>
+            Pick another event
+          </button>
+          <button type="button" className="btn btn-outline btn-sm" onClick={detail.reload}>
+            Try again
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   const attendees = task.assignments ?? []
   const checkedInRows = attendees.filter((a) => isCheckedIn(a))
@@ -464,7 +518,7 @@ function OrganizerCheckin({ myEvents, eventId, onPick, onClear }) {
         {error ? (
           <div style={{ width: '100%' }}>
             <ErrorState error={error} onRetry={refetch} />
-            <button type="button" className="btn btn-link" style={{ marginTop: 12 }} onClick={onClear}>
+            <button type="button" className="btn btn-link-gold" style={{ marginTop: 12 }} onClick={onClear}>
               Pick another event
             </button>
           </div>
@@ -477,7 +531,7 @@ function OrganizerCheckin({ myEvents, eventId, onPick, onClear }) {
                 style={{
                   fontFamily: 'var(--display)',
                   fontWeight: 800,
-                  fontSize: 92,
+                  fontSize: 'clamp(52px, 18vw, 92px)',
                   letterSpacing: '0.12em',
                   lineHeight: 1,
                   color: 'var(--gold-light)',
@@ -490,82 +544,114 @@ function OrganizerCheckin({ myEvents, eventId, onPick, onClear }) {
               </div>
             </div>
             <div style={{ width: '100%' }}>
-              <div style={{ height: 6, background: 'var(--ink-4)', overflow: 'hidden' }}>
+              <div
+                role="progressbar"
+                aria-label="Time until the code rotates"
+                aria-valuemin={0}
+                aria-valuemax={periodSeconds}
+                aria-valuenow={Math.max(0, Math.ceil(remaining))}
+                style={{ height: 6, background: 'var(--ink-4)', overflow: 'hidden' }}
+              >
+                {/* scaled rather than resized, so the countdown does not
+                    relayout the panel once a second */}
                 <div
                   style={{
                     height: '100%',
-                    width: `${pct}%`,
+                    width: '100%',
+                    transformOrigin: 'left center',
+                    transform: `scaleX(${Math.max(0, Math.min(1, pct / 100))})`,
                     background: 'var(--gold)',
-                    transition: 'width 0.5s linear',
+                    transition: 'transform 0.5s linear',
                   }}
                 />
               </div>
-              <div style={{ fontSize: 13, color: 'var(--muted-3)', marginTop: 12 }}>
+              {/* the count changes every second; announcing each one would bury
+                  everything else a screen reader has to say */}
+              <div aria-live="off" style={{ fontSize: 13, color: 'var(--muted-3)', marginTop: 12 }}>
                 New code in {Math.max(0, Math.ceil(remaining))}s · attendees scan or type it
               </div>
+              {stale ? (
+                <div style={{ fontSize: 13, color: 'var(--gold-light)', marginTop: 8 }}>
+                  Code may be stale. Reconnecting.
+                </div>
+              ) : null}
             </div>
           </>
         )}
 
         <div style={{ fontSize: 13, color: 'var(--muted-3)' }}>
-          {task.title} · {task.location.name}
+          {task.title} · {task.location.name ?? 'No location'}
         </div>
-        <button type="button" className="btn btn-link" style={{ color: 'var(--gold-light)' }} onClick={onClear}>
+        <button type="button" className="btn btn-link-gold" onClick={onClear}>
           Pick another event
         </button>
       </div>
 
       {attendees.length ? (
-        <div style={{ width: 340, flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div style={{ display: 'flex', gap: 14 }}>
-            <div className="card" style={{ flex: 1, padding: 20 }}>
-              <div className="stat-num">{checkedInRows.length}</div>
-              <div className="stat-cap">Checked in</div>
-            </div>
-            <div className="card" style={{ flex: 1, padding: 20 }}>
-              <div className="stat-num">{task.takenCount}</div>
-              <div className="stat-cap">Reserved</div>
-            </div>
-          </div>
+        <div className="rail" style={{ flex: '1 1 300px', display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <Kicker>ATTENDEES</Kicker>
-            {ordered.map((a) => (
-              <div
-                key={a.id}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 11,
-                  padding: '11px 0',
-                  borderBottom: '1px solid var(--line-3)',
-                }}
-              >
-                <Avatar name={a.taker.name} size={32} />
-                <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 600 }}>
-                  {a.taker.name}
-                </span>
-                {isCheckedIn(a) ? (
-                  <span
-                    style={{
-                      fontSize: 11.5,
-                      fontWeight: 700,
-                      color: 'var(--green)',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 5,
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    <Icon name="check_circle" size={15} color="var(--green)" />
-                    {a.checkedInAt ? timeOnly(a.checkedInAt) : 'Checked in'}
+            {/* the two counts belong to this list, so they head it rather than
+                standing alone as tiles the eye has to reconnect */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'baseline',
+                justifyContent: 'space-between',
+                gap: 12,
+              }}
+            >
+              <Kicker>ATTENDEES</Kicker>
+              <span className="tabular" style={{ fontSize: 12.5, color: 'var(--muted-2)' }}>
+                <strong style={{ color: 'var(--ink)' }}>{checkedInRows.length}</strong> checked in of{' '}
+                {task.takenCount} reserved
+              </span>
+            </div>
+            {/* the door adds rows over a socket, so the list announces itself
+                instead of changing silently behind a screen reader */}
+            <div
+              role="log"
+              aria-live="polite"
+              style={{ display: 'flex', flexDirection: 'column', gap: 6 }}
+            >
+              {ordered.map((a, i) => (
+                <div
+                  key={a.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 11,
+                    padding: '11px 0',
+                    borderBottom: i < ordered.length - 1 ? '1px solid var(--line-3)' : undefined,
+                  }}
+                >
+                  <Avatar name={a.taker.name} size={32} />
+                  <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 600 }}>
+                    {a.taker.name}
                   </span>
-                ) : (
-                  <span style={{ fontSize: 11.5, color: 'var(--muted-3)', whiteSpace: 'nowrap' }}>
-                    Not yet
-                  </span>
-                )}
-              </div>
-            ))}
+                  {isCheckedIn(a) ? (
+                    <span
+                      style={{
+                        fontSize: 11.5,
+                        fontWeight: 700,
+                        color: 'var(--green)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 5,
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {/* green stays a text colour; the tick inherits it at text size */}
+                      <Icon name="check_circle" size={15} />
+                      {a.checkedInAt ? timeOnly(a.checkedInAt) : 'Checked in'}
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: 11.5, color: 'var(--muted-2)', whiteSpace: 'nowrap' }}>
+                      Not yet
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       ) : null}
@@ -590,8 +676,10 @@ export function Checkin() {
     setSearchParams(params)
   }
 
-  if (loading) return <Loading label="Loading check-in" />
-  if (error) return <ErrorState error={error} onRetry={reload} />
+  // Checking in reloads this list underneath the confirmation panel, so both
+  // guards fire only when there is genuinely nothing to show.
+  if (loading && !data) return <Loading label="Loading check-in" />
+  if (error && !data) return <ErrorState error={error} onRetry={reload} />
 
   const reserved = data.events ?? []
   const myEvents = (data.posted ?? []).filter((t) => t.type === 'EVENT')
