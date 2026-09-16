@@ -2,6 +2,12 @@
 FROM node:24-bookworm-slim AS builder
 WORKDIR /app
 
+# Browser key for the map picker + Places search: baked into the bundle at
+# build time by design (public, must be referrer-restricted in the Google
+# console). Pass with: --build-arg VITE_GOOGLE_MAPS_KEY=...
+ARG VITE_GOOGLE_MAPS_KEY
+ENV VITE_GOOGLE_MAPS_KEY=$VITE_GOOGLE_MAPS_KEY
+
 COPY package.json package-lock.json ./
 RUN npm ci
 
