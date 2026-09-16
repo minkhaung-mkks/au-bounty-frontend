@@ -109,6 +109,16 @@ export async function fetchMeta() {
   }
 }
 
-/** The login route answers with a 302 to Microsoft, so it needs a full page navigation, not fetch. */
-export const microsoftLoginUrl = (returnTo) =>
-  `${BASE}/auth/login?returnTo=${encodeURIComponent(returnTo || '/')}`
+/**
+ * The login route answers with a 302 to Microsoft, so it needs a full page
+ * navigation, not fetch. returnTo arrives as a router path, which excludes the
+ * router basename, but the server glues it onto APP_ORIGIN (bare origin), so
+ * the SPA mount must be added here at the boundary or the post-login redirect
+ * lands outside the app.
+ */
+export const microsoftLoginUrl = (returnTo) => {
+  const base = import.meta.env.BASE_URL.replace(/\/$/, '') // '/aubounty'
+  const path = returnTo || '/'
+  const withBase = path.startsWith(base + '/') || path === base ? path : base + path
+  return `${BASE}/auth/login?returnTo=${encodeURIComponent(withBase)}`
+}
