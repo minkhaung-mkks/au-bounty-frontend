@@ -8,7 +8,9 @@ import './index.css'
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <BrowserRouter>
+    {/* basename comes from the vite base, so the router and the asset URLs
+        always agree on the mount point without a second constant. */}
+    <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, '')}>
       <SessionProvider>
         <ToastProvider>
           <App />

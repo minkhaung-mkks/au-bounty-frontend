@@ -115,7 +115,7 @@ export function Profile() {
   }
 
   const copyLink = async () => {
-    const url = `${window.location.origin}/u/${user.id}`
+    const url = `${window.location.origin}${import.meta.env.BASE_URL}u/${user.id}`
     try {
       await navigator.clipboard.writeText(url)
       flash('Public link copied. It opens without signing in.')

@@ -2,6 +2,9 @@ import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
 export default defineConfig({
+  // The SPA is mounted under /aubounty/ on the shared course domain (and in
+  // dev too, so the URLs the dev server serves are the ones Nginx serves).
+  base: '/aubounty/',
   plugins: [react()],
   server: {
     proxy: {
