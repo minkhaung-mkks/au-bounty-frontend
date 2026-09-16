@@ -50,19 +50,6 @@ export const TAG_CATEGORY_LABEL = {
   ERRAND: 'Errand',
 }
 
-export const ALERT_STATUS_LABEL = {
-  ACTIVE: 'Active',
-  RESOLVED: 'Resolved',
-  FLAGGED: 'Flagged',
-}
-
-/** The alert chip's colours, shared by the emergency screen and the console. */
-export const ALERT_STATUS_STYLE = {
-  ACTIVE: { background: 'var(--red)', color: '#fff' },
-  RESOLVED: { background: 'var(--bone-2)', color: 'var(--green)' },
-  FLAGGED: { background: 'var(--bone-2)', color: 'var(--muted)' },
-}
-
 /** Reads a label out of a map without ever rendering nothing. */
 export const labelOf = (map, value) => map[value] ?? value ?? ''
 

@@ -57,7 +57,7 @@ export function Review() {
 
       {sealed ? (
         <div
-          className="card"
+          className="card sheet-sealed"
           style={{
             padding: 56,
             textAlign: 'center',
@@ -65,13 +65,9 @@ export function Review() {
             flexDirection: 'column',
             alignItems: 'center',
             gap: 18,
-            animation: 'fadeUp .3s ease both',
           }}
         >
-          <div
-            className="avatar"
-            style={{ width: 78, height: 78 }}
-          >
+          <div className="avatar seal" style={{ width: 78, height: 78 }}>
             <Icon name="lock_clock" size={40} color="var(--red)" />
           </div>
           <div className="display" style={{ fontSize: 26 }}>

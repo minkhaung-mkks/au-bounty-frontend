@@ -21,7 +21,7 @@ const isCheckedIn = (assignment) =>
 /** Most recent first, so the list reads like a door log. */
 const byCheckinTime = (a, b) => (b.checkedInAt ?? '').localeCompare(a.checkedInAt ?? '')
 
-const QrCanvas = ({ value, size = 176 }) => {
+const QrCanvas = ({ value, fallback, size = 176, label }) => {
   const ref = useRef(null)
   // A swallowed render leaves a blank white square that reads as "scan me" and
   // never resolves, so a failure says so and falls back to the number.
@@ -55,7 +55,7 @@ const QrCanvas = ({ value, size = 176 }) => {
         width={size}
         height={size}
         role="img"
-        aria-label={`QR code ${value}`}
+        aria-label={label ?? `QR code ${value}`}
         hidden={failed}
       />
       {failed ? (
@@ -70,7 +70,7 @@ const QrCanvas = ({ value, size = 176 }) => {
               color: 'var(--ink)',
             }}
           >
-            {value}
+            {fallback ?? value}
           </div>
           <div style={{ fontSize: 11.5, color: 'var(--muted-2)', marginTop: 6 }}>
             QR code unavailable — read the number aloud
@@ -196,7 +196,15 @@ function Picker({ kicker, children }) {
 
 /* --------------------------------------------------------------- attendee */
 
-function AttendeeCheckin({ reserved, eventId, onPick, onClear, onCheckedIn }) {
+function AttendeeCheckin({
+  reserved,
+  eventId,
+  scannedCode,
+  onPick,
+  onClear,
+  onCheckedIn,
+  onScannedCodeUsed,
+}) {
   // A deep link can name an event that is not in "reserved" anymore (withdrawn
   // seat, shared link), so the selected event comes from the list when present
   // and from a detail fetch otherwise.
@@ -223,6 +231,57 @@ function AttendeeCheckin({ reserved, eventId, onPick, onClear, onCheckedIn }) {
   const assignment = listEntry?.assignment ?? detail.data?.task?.myAssignment ?? null
   const checkedInAlready = isCheckedIn(assignment)
   const confirmed = done || checkedInAlready ? (done?.at ?? assignment?.checkedInAt ?? null) : null
+  const activeTaskId = task?.id ?? null
+
+  // The typed form and a scanned code both land here, so a scan cannot start a
+  // second attempt while the first is still in flight.
+  const inFlight = useRef(false)
+  const submitCode = useCallback(
+    async (value) => {
+      if (!activeTaskId || value.length !== 6 || inFlight.current) return
+      inFlight.current = true
+      setSubmitting(true)
+      setError(null)
+      try {
+        const payload = await api.post(`/tasks/${activeTaskId}/checkin`, { code: value })
+        const updated = payload?.assignment ?? payload
+        setDone({ at: updated?.checkedInAt ?? new Date().toISOString(), already: false })
+        onCheckedIn()
+      } catch (err) {
+        if (err.status === 409) {
+          setDone({ at: null, already: true })
+          onCheckedIn()
+        } else if (err.code === 'BAD_CODE' || err.status === 400) {
+          setError('That code does not match. It may have just rotated — take the current one from the screen at the door.')
+        } else if (err.code === 'TOO_MANY_ATTEMPTS' || err.status === 429) {
+          setError('Too many wrong codes. Wait a moment, then scan or type the code now on the screen at the door.')
+        } else if (err.status === 403) {
+          setError('You need an accepted seat on this event before you can check in. Reserve one first.')
+        } else {
+          setError(err?.message || 'Checking in failed. Try again.')
+        }
+      } finally {
+        inFlight.current = false
+        setSubmitting(false)
+      }
+    },
+    [activeTaskId, onCheckedIn],
+  )
+
+  // A scanned QR carries the code in the URL. Use it once per event+code: fill
+  // the field so the attendee sees what was read, drop it from the URL so a
+  // refresh or a forwarded link cannot replay a code that has since rotated,
+  // then submit without making anyone press anything.
+  const scanUsed = useRef(null)
+  useEffect(() => {
+    if (!scannedCode || !activeTaskId) return
+    const key = `${activeTaskId}:${scannedCode}`
+    if (scanUsed.current === key) return
+    scanUsed.current = key
+    setCode(scannedCode)
+    onScannedCodeUsed()
+    if (!checkedInAlready) submitCode(scannedCode)
+  }, [scannedCode, activeTaskId, checkedInAlready, submitCode, onScannedCodeUsed])
 
   if (needsDetail && detail.loading) return <Loading label="Loading event" />
   if (needsDetail && detail.error) return <ErrorState error={detail.error} onRetry={detail.reload} />
@@ -267,30 +326,9 @@ function AttendeeCheckin({ reserved, eventId, onPick, onClear, onCheckedIn }) {
 
   /* --------------------------------------------------- code entry / done */
 
-  const submit = async (e) => {
+  const submit = (e) => {
     e.preventDefault()
-    if (code.length !== 6 || submitting) return
-    setSubmitting(true)
-    setError(null)
-    try {
-      const payload = await api.post(`/tasks/${task.id}/checkin`, { code })
-      const updated = payload?.assignment ?? payload
-      setDone({ at: updated?.checkedInAt ?? new Date().toISOString(), already: false })
-      onCheckedIn()
-    } catch (err) {
-      if (err.status === 409) {
-        setDone({ at: null, already: true })
-        onCheckedIn()
-      } else if (err.code === 'BAD_CODE' || err.status === 400) {
-        setError('That code does not match. It may have just rotated — take the current one from the screen at the door.')
-      } else if (err.status === 403) {
-        setError('You need an accepted seat on this event before you can check in. Reserve one first.')
-      } else {
-        setError(err?.message || 'Checking in failed. Try again.')
-      }
-    } finally {
-      setSubmitting(false)
-    }
+    submitCode(code)
   }
 
   const confirmedPanel = done || checkedInAlready
@@ -388,8 +426,8 @@ function AttendeeCheckin({ reserved, eventId, onPick, onClear, onCheckedIn }) {
               </button>
             </form>
             <div style={{ fontSize: 12.5, color: 'var(--muted-3)', textAlign: 'center', lineHeight: 1.6 }}>
-              The organizer's code rotates every 60 seconds. A code that has just been replaced is
-              rejected.
+              Scan the QR at the door with your camera to fill this in, or type the code. It rotates
+              every 60 seconds; a code that has just been replaced is rejected.
             </div>
             <button type="button" className="btn btn-link-gold" onClick={onClear}>
               Pick a different event
@@ -506,6 +544,13 @@ function OrganizerCheckin({ myEvents, eventId, onPick, onClear }) {
   const ordered = [...checkedInRows].sort(byCheckinTime).concat(waitingRows)
   const periodSeconds = state?.periodSeconds ?? 60
   const pct = Math.max(0, Math.min(100, (remaining / periodSeconds) * 100))
+  // A phone camera only offers to open a QR that holds a URL, so the code rides
+  // in one: the scan lands on this event's attendee view, which checks in on
+  // arrival. Built relative to the current URL, so whatever path the app is
+  // served under carries over.
+  const scanUrl = state
+    ? new URL(`?mode=attendee&event=${task.id}&code=${state.code}`, window.location.href).href
+    : null
 
   return (
     <div className="row" style={{ alignItems: 'flex-start' }}>
@@ -540,7 +585,12 @@ function OrganizerCheckin({ myEvents, eventId, onPick, onClear }) {
                 {state.code}
               </div>
               <div style={{ display: 'flex', justifyContent: 'center', marginTop: 18 }}>
-                <QrCanvas value={state.code} size={168} />
+                <QrCanvas
+                  value={scanUrl}
+                  fallback={state.code}
+                  label="Scan to check in to this event"
+                  size={168}
+                />
               </div>
             </div>
             <div style={{ width: '100%' }}>
@@ -665,11 +715,17 @@ export function Checkin() {
   const [searchParams, setSearchParams] = useSearchParams()
   const mode = searchParams.get('mode') === 'organizer' ? 'organizer' : 'attendee'
   const eventId = searchParams.get('event') || null
+  // A scanned QR arrives as ?code=; six digits or nothing.
+  const scannedCode = (searchParams.get('code') || '').replace(/\D/g, '').slice(0, 6) || null
 
   const { data, error, loading, reload } = useApi(() => api.get('/me/tasks'), [])
 
   const pickEvent = (id) => setSearchParams({ event: id, mode })
   const clearEvent = () => setSearchParams({ mode })
+  // Replaced rather than pushed: the back button must not walk into a code that
+  // has already been spent or rotated.
+  const clearScannedCode = () =>
+    setSearchParams(eventId ? { mode, event: eventId } : { mode }, { replace: true })
   const switchMode = (next) => {
     const params = { mode: next }
     if (eventId) params.event = eventId
@@ -713,9 +769,11 @@ export function Checkin() {
         <AttendeeCheckin
           reserved={reserved}
           eventId={eventId}
+          scannedCode={scannedCode}
           onPick={pickEvent}
           onClear={clearEvent}
           onCheckedIn={reload}
+          onScannedCodeUsed={clearScannedCode}
         />
       ) : (
         <OrganizerCheckin myEvents={myEvents} eventId={eventId} onPick={pickEvent} onClear={clearEvent} />

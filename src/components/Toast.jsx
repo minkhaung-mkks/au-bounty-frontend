@@ -24,6 +24,7 @@ export function ToastProvider({ children }) {
       {toast ? (
         <div className={toast.kind === 'error' ? 'toast toast-error' : 'toast'} role="status">
           <Icon
+            className={toast.kind === 'error' ? undefined : 'seal'}
             name={toast.kind === 'error' ? 'error' : 'check_circle'}
             color={toast.kind === 'error' ? '#fff' : 'var(--gold-light)'}
           />

@@ -40,14 +40,15 @@ export function Login() {
     [devAuth],
   )
 
-  // Where RequireUser intercepted the user from, so Microsoft sign-in ends there.
-  // RequireUser stores the bare path; accept a location object too.
+  // Where RequireUser intercepted the user from, so sign-in ends there.
+  // RequireUser stores path and query; accept a location object too.
   const from = location.state?.from
-  const intendedPath = (typeof from === 'string' ? from : from?.pathname) || '/'
+  const intendedPath =
+    (typeof from === 'string' ? from : from && `${from.pathname ?? ''}${from.search ?? ''}`) || '/'
 
   const pick = async (id) => {
     await signIn(id)
-    navigate('/')
+    navigate(intendedPath)
   }
 
   return (

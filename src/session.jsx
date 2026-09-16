@@ -3,7 +3,6 @@ import {
   api,
   clearStoredUserId,
   fetchMeta,
-  getStoredUserId,
   microsoftLoginUrl,
   NO_CAPABILITIES,
   setStoredUserId,
@@ -12,12 +11,18 @@ import {
 const SessionContext = createContext(null)
 
 /**
- * Holds whoever is currently "signed in". Two credentials, one shape:
+ * Holds whoever is currently "signed in". Three credentials, one shape:
  *
  * - Dev picker (meta.devAuth true): a seeded user id in localStorage, sent as
  *   the x-dev-user-id header. This is the only mode until /meta exists.
  * - Microsoft SSO (meta.devAuth false): an httpOnly cookie the server set on
  *   /auth/callback. Nothing is stored or attached client-side.
+ * - Admin password (/admin-login, any mode): the same httpOnly cookie, set on
+ *   POST /auth/admin/login instead. The server prefers a cookie over the dev
+ *   header, so an admin session survives a leftover picker id.
+ *
+ * Because a cookie can be present in either mode, /me is always attempted; a
+ * 401 is the normal "nobody is signed in" answer, not an error.
  */
 export function SessionProvider({ children }) {
   const [state, setState] = useState({
@@ -32,10 +37,6 @@ export function SessionProvider({ children }) {
     // A cookie session authenticates by cookie alone; drop any picker id left
     // over from earlier so requests never send a conflicting header.
     if (!devAuth) clearStoredUserId()
-    if (devAuth && !getStoredUserId()) {
-      setState({ me: null, loading: false, devAuth, capabilities })
-      return
-    }
     try {
       const me = await api.get('/me')
       setState({ me, loading: false, devAuth, capabilities })
@@ -59,6 +60,21 @@ export function SessionProvider({ children }) {
     [load],
   )
 
+  /**
+   * Admin console sign-in. The server answers with a session cookie, so the
+   * only client-side work is dropping any picker id that would otherwise ride
+   * along as a conflicting header, then reloading /me. Errors propagate for the
+   * form to show.
+   */
+  const signInWithPassword = useCallback(
+    async (email, password) => {
+      clearStoredUserId()
+      await api.post('/auth/admin/login', { email, password })
+      await load()
+    },
+    [load],
+  )
+
   /** Leaves the SPA entirely; the server brings the browser back via returnTo. */
   const signInWithMicrosoft = useCallback((returnTo) => {
     clearStoredUserId()
@@ -66,11 +82,12 @@ export function SessionProvider({ children }) {
   }, [])
 
   const signOut = useCallback(() => {
-    // Only a cookie session has server-side state to end.
-    if (!state.devAuth) api.get('/auth/logout').catch(() => {})
+    // Unconditional: an admin password session leaves a cookie to clear even
+    // while the dev picker is enabled.
+    api.get('/auth/logout').catch(() => {})
     clearStoredUserId()
     setState((s) => ({ me: null, loading: false, devAuth: s.devAuth, capabilities: s.capabilities }))
-  }, [state.devAuth])
+  }, [])
 
   const value = {
     me: state.me?.user ?? null,
@@ -81,6 +98,7 @@ export function SessionProvider({ children }) {
     devAuth: state.devAuth,
     capabilities: state.capabilities ?? NO_CAPABILITIES,
     signIn,
+    signInWithPassword,
     signInWithMicrosoft,
     signOut,
     reload: load,

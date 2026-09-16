@@ -5,17 +5,9 @@ import { useApi, useDebounced } from '../lib/useApi.js'
 import { useSession } from '../session.jsx'
 import { useToast } from '../components/Toast.jsx'
 import { Avatar, Empty, ErrorState, Icon, Kicker, Loading } from '../components/ui.jsx'
-import {
-  ALERT_STATUS_LABEL,
-  ALERT_STATUS_STYLE,
-  ROLE_LABEL,
-  TAG_CATEGORY_LABEL,
-  labelOf,
-  relativeTime,
-} from '../lib/format.js'
+import { ROLE_LABEL, TAG_CATEGORY_LABEL, labelOf, relativeTime } from '../lib/format.js'
 
 const TABS = [
-  { key: 'alerts', label: 'Alerts' },
   { key: 'people', label: 'People & roles' },
   { key: 'orgs', label: 'Organizations' },
   { key: 'reviews', label: 'Reviews' },
@@ -93,7 +85,7 @@ export function Admin() {
       >
         <div>
           <h1 className="display">Admin console</h1>
-          <p className="page-sub">Alerts, roles, organizations and review moderation.</p>
+          <p className="page-sub">Roles, organizations and review moderation.</p>
         </div>
         <div className="seg-row">
           {TABS.map((t) => (
@@ -107,155 +99,11 @@ export function Admin() {
       {/* the panel is named after the pressed tab, so the swap is announced as
           a change of region rather than the page silently becoming something else */}
       <div role="region" aria-label={TABS.find((t) => t.key === tab).label}>
-        {tab === 'alerts' ? <AlertsTab /> : null}
         {tab === 'people' ? <PeopleTab /> : null}
         {tab === 'orgs' ? <OrgsTab /> : null}
         {tab === 'reviews' ? <ReviewsTab /> : null}
       </div>
     </div>
-  )
-}
-
-/* ------------------------------------------------------------------ alerts */
-
-const ALERT_VIEWS = ['ACTIVE', 'RESOLVED', 'FLAGGED', 'ALL']
-
-function AlertsTab() {
-  const { flash, flashError } = useToast()
-  const [view, setView] = useState('ACTIVE')
-  const { data, error, loading, reload } = useApi(
-    () => api.get(view === 'ALL' ? '/admin/alerts' : `/admin/alerts?status=${view}`),
-    [view],
-  )
-  const [pending, setPending] = useState(null) // { id, status } awaiting confirm
-  const [busyId, setBusyId] = useState(null)
-
-  const setStatus = async (alert, status) => {
-    setBusyId(alert.id)
-    try {
-      await api.patch(`/admin/alerts/${alert.id}`, { status })
-      flash(status === 'RESOLVED' ? 'Alert resolved.' : 'Alert flagged as a false alarm.')
-      setPending(null)
-      reload()
-    } catch (err) {
-      flashError(err)
-    } finally {
-      setBusyId(null)
-    }
-  }
-
-  const alerts = data?.alerts ?? []
-
-  return (
-    <section style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 16,
-          flexWrap: 'wrap',
-        }}
-      >
-        <Kicker>EMERGENCY ALERTS</Kicker>
-        <div className="seg-row">
-          {ALERT_VIEWS.map((v) => (
-            <button key={v} className="seg" aria-pressed={view === v} onClick={() => setView(v)}>
-              {v === 'ALL' ? 'All' : labelOf(ALERT_STATUS_LABEL, v)}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* only the results swap while a view loads; unmounting the filter row
-          would pull the segment the admin just pressed out from under them */}
-      {loading ? <Loading label="Loading alerts" /> : null}
-      {!loading && error ? <ErrorState error={error} onRetry={reload} /> : null}
-
-      {!loading && !error && alerts.length === 0 ? (
-        <Empty>
-          {view === 'ACTIVE'
-            ? 'No active alerts. Quiet campus.'
-            : view === 'ALL'
-              ? 'No alerts recorded.'
-              : `No ${view.toLowerCase()} alerts.`}
-        </Empty>
-      ) : null}
-
-      {(error ? [] : alerts).map((a) => (
-        <div
-          key={a.id}
-          className="card"
-          style={{ borderLeft: `3px solid ${a.status === 'ACTIVE' ? 'var(--red)' : 'var(--line)'}` }}
-        >
-          <div style={{ padding: 20, display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' }}>
-            <div style={{ flex: '1 1 280px', minWidth: 0 }}>
-              <div style={{ fontFamily: 'var(--display)', fontWeight: 700, fontSize: 19 }}>
-                <Link to={`/u/${a.user.id}`}>{a.user.name}</Link>
-                {a.user.universityId ? (
-                  <span style={{ color: 'var(--muted-2)', fontWeight: 400 }}> · {a.user.universityId}</span>
-                ) : null}
-              </div>
-              <div style={{ fontSize: 12.5, color: 'var(--muted-2)', marginTop: 4 }}>
-                {a.lat.toFixed(5)}, {a.lng.toFixed(5)} · {relativeTime(a.createdAt)}
-                {a.resolvedAt ? ` · resolved ${relativeTime(a.resolvedAt)}` : ''}
-              </div>
-              {a.message ? (
-                <div style={{ fontSize: 13.5, color: 'var(--ink-4)', marginTop: 7, fontStyle: 'italic' }}>
-                  “{a.message}”
-                </div>
-              ) : null}
-            </div>
-            <span className="chip" style={ALERT_STATUS_STYLE[a.status]}>
-              {labelOf(ALERT_STATUS_LABEL, a.status)}
-            </span>
-            <span
-              className={`chip ${a.forwardedToPeer ? 'chip-reward' : 'chip-request'}`}
-              title={
-                a.forwardedToPeer
-                  ? 'The peer partner acknowledged this alert.'
-                  : 'The peer partner has not acknowledged it yet; delivery keeps retrying.'
-              }
-            >
-              <Icon name={a.forwardedToPeer ? 'send' : 'sync'} size={13} />
-              {a.forwardedToPeer ? 'Sent to partner' : 'Retrying'}
-            </span>
-            {a.status === 'ACTIVE' && pending?.id !== a.id ? (
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button
-                  className="btn btn-dark btn-sm"
-                  onClick={() => setPending({ id: a.id, status: 'RESOLVED' })}
-                >
-                  Resolve
-                </button>
-                <button
-                  className="btn btn-outline-red btn-sm"
-                  onClick={() => setPending({ id: a.id, status: 'FLAGGED' })}
-                >
-                  Flag false alarm
-                </button>
-              </div>
-            ) : null}
-          </div>
-          {pending?.id === a.id ? (
-            <div style={{ borderTop: '1px solid var(--line-3)', background: 'var(--bone)', padding: '12px 20px' }}>
-              <Confirm
-                message={
-                  pending.status === 'RESOLVED'
-                    ? 'Mark this alert resolved? It leaves the active queue.'
-                    : 'Flag as a false alarm? It leaves the active queue and is marked as a false alarm.'
-                }
-                confirmLabel={pending.status === 'RESOLVED' ? 'Resolve' : 'Flag'}
-                tone={pending.status === 'RESOLVED' ? 'dark' : 'red'}
-                busy={busyId === a.id}
-                onConfirm={() => setStatus(a, pending.status)}
-                onCancel={() => setPending(null)}
-              />
-            </div>
-          ) : null}
-        </div>
-      ))}
-    </section>
   )
 }
 

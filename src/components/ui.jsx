@@ -1,7 +1,14 @@
 import { initials } from '../lib/format.js'
 
-export const Icon = ({ name, size = 20, color, style, ...rest }) => (
-  <span className="ms" style={{ fontSize: size, color, ...style }} aria-hidden="true" {...rest}>
+export const Icon = ({ name, size = 20, color, style, className, ...rest }) => (
+  // `ms` carries the icon font, so a caller's class has to merge with it, not
+  // replace it — otherwise the glyph renders as the literal ligature name.
+  <span
+    className={className ? `ms ${className}` : 'ms'}
+    style={{ fontSize: size, color, ...style }}
+    aria-hidden="true"
+    {...rest}
+  >
     {name}
   </span>
 )

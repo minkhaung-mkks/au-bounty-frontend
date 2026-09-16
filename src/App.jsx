@@ -4,6 +4,7 @@ import { useSession } from './session.jsx'
 import { Icon, Loading, Mark } from './components/ui.jsx'
 
 import { Login } from './screens/Login.jsx'
+import { AdminLogin } from './screens/AdminLogin.jsx'
 import { Board } from './screens/Board.jsx'
 import { TaskDetail } from './screens/TaskDetail.jsx'
 import { EventDetail } from './screens/EventDetail.jsx'
@@ -26,7 +27,9 @@ function RequireUser() {
   const { me, loading } = useSession()
   const location = useLocation()
   if (loading) return <FullPageLoading />
-  if (!me) return <Navigate to="/login" replace state={{ from: location.pathname }} />
+  // The bare path would drop a scanned check-in code, so the query rides along.
+  if (!me)
+    return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />
   return <Outlet />
 }
 
@@ -84,10 +87,24 @@ function LoginRoute() {
   return me ? <Navigate to="/" replace /> : <Login />
 }
 
+/**
+ * The admin console's password form. Unlinked by design — no nav item, no
+ * button on /login — so it is only reached by typing the path. An admin who is
+ * already signed in skips the form; anyone else signed in goes to the board,
+ * because the console itself would only turn them away.
+ */
+function AdminLoginRoute() {
+  const { me, loading } = useSession()
+  if (loading) return <FullPageLoading />
+  if (me) return <Navigate to={me.role === 'ADMIN' ? '/admin' : '/'} replace />
+  return <AdminLogin />
+}
+
 export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginRoute />} />
+      <Route path="/admin-login" element={<AdminLoginRoute />} />
       <Route path="/u/:id" element={<ProfileRoute />} />
 
       <Route element={<RequireUser />}>
