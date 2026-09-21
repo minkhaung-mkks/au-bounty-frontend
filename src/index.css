@@ -868,6 +868,15 @@ select.field {
   }
 }
 
+/* The public profile's chrome bar (drawn inline in App.jsx). Below the shell's
+   narrow breakpoint the explanatory note steps aside so the brand row keeps
+   its wordmark on one line instead of wrapping under the badge. */
+@media (max-width: 900px) {
+  .public-note {
+    display: none;
+  }
+}
+
 /* ----------------------------------------------------------- app layout */
 
 .shell {

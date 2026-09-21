@@ -49,7 +49,10 @@ function PublicChrome({ children }) {
       >
         <BrandMark size={36} />
         <span style={{ fontFamily: 'var(--display)', fontWeight: 800, fontSize: 17 }}>AU Bounty</span>
-        <span style={{ marginLeft: 'auto', fontSize: 12.5, color: 'var(--muted-3)' }}>
+        <span
+          className="public-note"
+          style={{ marginLeft: 'auto', fontSize: 12.5, color: 'var(--muted-3)' }}
+        >
           Public profile · no sign-in needed
         </span>
         <Link className="btn btn-outline-dark btn-sm" to="/login">
