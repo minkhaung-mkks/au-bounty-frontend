@@ -163,6 +163,9 @@ export function Create() {
     // poster either meant a place and forgot it, or meant remote and should
     // say so on the record.
     if (!remote && !form.locationName.trim() && !(lat && lng)) {
+      // The message renders inside the coordinate section, so open it, or the
+      // button looks dead with the error hidden in the collapsed accordion.
+      setCoordsOpen(true)
       setLocationError('Drop a pin, name the place, or choose "Remote / online" instead.')
       return
     }
