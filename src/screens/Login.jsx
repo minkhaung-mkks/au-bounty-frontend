@@ -114,14 +114,18 @@ export function Login() {
           </p>
         </div>
 
+        {/* Stacked, not wrapped: three assurances in a row broke 2+1 at laptop
+            widths and left the third orphaned on its own line. One per line
+            reads as a deliberate list at every width. */}
         <div
           style={{
             display: 'flex',
-            gap: 34,
+            flexDirection: 'column',
+            alignItems: 'flex-start',
+            gap: 13,
             position: 'relative',
             fontSize: 13,
             color: 'var(--red-soft-2)',
-            flexWrap: 'wrap',
           }}
         >
           {TRUST.map(([icon, label]) => (
