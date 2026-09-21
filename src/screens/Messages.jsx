@@ -115,6 +115,7 @@ function ThreadPane({ thread, me, headingRef, onBack }) {
 
   const scrollRef = useRef(null)
   const composerRef = useRef(null)
+  const composerFormRef = useRef(null)
   const pinnedRef = useRef(true)
   const anchorRef = useRef(null)
   const pendingRef = useRef([])
@@ -164,6 +165,23 @@ function ThreadPane({ thread, me, headingRef, onBack }) {
       el.scrollTop = el.scrollHeight
     }
   }, [messages])
+
+  // The composer and the conversation share a column, so every pixel the
+  // composer grows (chips staged or unstaged, a taller draft) is a pixel the
+  // message list loses. A pinned view has to ride that resize, or the newest
+  // bubble ends up half clipped behind the composer. The log only exists once
+  // history has loaded, so the observer attaches (and re-attaches) with it.
+  useEffect(() => {
+    const form = composerFormRef.current
+    const scroller = scrollRef.current
+    if (!form || !scroller || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => {
+      const el = scrollRef.current
+      if (el && pinnedRef.current) el.scrollTop = el.scrollHeight
+    })
+    ro.observe(form)
+    return () => ro.disconnect()
+  }, [messages !== null])
 
   const loadOlder = async () => {
     const oldest = messages?.[0]
@@ -520,6 +538,7 @@ function ThreadPane({ thread, me, headingRef, onBack }) {
       )}
 
       <form
+        ref={composerFormRef}
         onSubmit={send}
         style={{
           padding: '16px 20px',
