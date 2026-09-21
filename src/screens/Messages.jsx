@@ -393,15 +393,7 @@ function ThreadPane({ thread, me, headingRef, onBack }) {
 
   return (
     <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-      <div
-        style={{
-          padding: '16px 24px',
-          borderBottom: '1px solid var(--line)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 13,
-        }}
-      >
+      <div className="thread-head">
         {onBack ? (
           <button
             type="button"
@@ -413,25 +405,25 @@ function ThreadPane({ thread, me, headingRef, onBack }) {
           </button>
         ) : null}
         <Avatar name={counterpart} />
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="thread-head-id">
           <div
             ref={headingRef}
             tabIndex={-1}
-            style={{ fontFamily: 'var(--display)', fontWeight: 700, fontSize: 16 }}
+            style={{ fontFamily: 'var(--display)', fontWeight: 700, fontSize: 16, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
           >
             <Link to={`/u/${thread.counterpart?.id}`}>{counterpart}</Link>
           </div>
-          <div style={{ fontSize: 12, color: 'var(--muted-2)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 7 }}>
+          <div style={{ fontSize: 12, color: 'var(--muted-2)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
             {thread.taskType ? <span className={`chip chip-type ${TYPE_CLASS[thread.taskType] ?? ''}`}>{thread.taskType}</span> : null}
             <span
               title={`${thread.taskTitle} · assignment thread`}
-              style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+              style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}
             >
               {thread.taskTitle} · assignment thread
             </span>
           </div>
         </div>
-        <Link className="btn btn-outline btn-sm" to={`/tasks/${thread.taskId}`}>
+        <Link className="btn btn-outline btn-sm" to={`/tasks/${thread.taskId}`} style={{ flex: '0 0 auto' }}>
           <Icon name="open_in_new" size={15} />
           View task
         </Link>
@@ -566,13 +558,22 @@ function ThreadPane({ thread, me, headingRef, onBack }) {
             </span>
           </div>
         ) : null}
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 11 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 11, flexWrap: 'wrap' }}>
           <textarea
             ref={composerRef}
             className="field"
             rows={1}
             placeholder={firstName ? `Message ${firstName}` : 'Write a message'}
-            style={{ flex: 1, resize: 'none', maxHeight: COMPOSER_MAX_H, overflowY: 'auto' }}
+            style={{
+              // A basis, not a floor: without it the textarea's intrinsic width
+              // squeezes the send controls off a phone-wide pane, and the field
+              // itself renders a couple of characters per line.
+              flex: '1 1 220px',
+              minWidth: 0,
+              resize: 'none',
+              maxHeight: COMPOSER_MAX_H,
+              overflowY: 'auto',
+            }}
             value={draft}
             maxLength={MAX_LEN}
             onChange={(e) => setDraft(e.target.value)}

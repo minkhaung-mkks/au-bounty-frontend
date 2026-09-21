@@ -708,6 +708,32 @@ select.field {
 
 /* --------------------------------------------------------------- threads */
 
+/* Conversation header. The task link may drop to its own row rather than
+   squeezing the counterpart's name out of a phone-wide bar. */
+.thread-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 13px;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--line);
+}
+.thread-head-id {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+@media (max-width: 720px) {
+  .thread-head {
+    padding: 12px 16px;
+  }
+  /* The basis makes the wrap decision leave the name a real row instead of
+     shrinking it to nothing once back + avatar + link fill the line. */
+  .thread-head-id {
+    flex-basis: 112px;
+  }
+}
+
 .thread-row {
   text-align: left;
   border: 0;
