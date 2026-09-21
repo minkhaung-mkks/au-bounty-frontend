@@ -2,7 +2,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { api } from '../api.js'
 import { useApi } from '../lib/useApi.js'
 import { useSession } from '../session.jsx'
-import { Avatar, ErrorState, Icon, Loading, Mark } from '../components/ui.jsx'
+import { Avatar, BrandLockup, ErrorState, Icon, Loading } from '../components/ui.jsx'
 import { ROLE_LABEL } from '../lib/format.js'
 
 const TRUST = [
@@ -77,18 +77,10 @@ export function Login() {
           }}
         />
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, position: 'relative' }}>
-          <Mark size={50} onRed />
-          <span
-            style={{
-              fontFamily: 'var(--display)',
-              fontWeight: 800,
-              fontSize: 22,
-              letterSpacing: '-0.02em',
-            }}
-          >
-            AU Bounty
-          </span>
+        {/* The cover lockup carries the wordmark itself, so no text sits
+            beside it. Above the fold: never lazy-loaded. */}
+        <div style={{ display: 'flex', position: 'relative' }}>
+          <BrandLockup size={96} />
         </div>
 
         <div style={{ position: 'relative', maxWidth: 560 }}>

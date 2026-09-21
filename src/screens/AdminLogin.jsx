@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSession } from '../session.jsx'
-import { Icon, Mark } from '../components/ui.jsx'
+import { BrandMark, Icon } from '../components/ui.jsx'
 
 /**
  * The console's own sign-in, at /admin-login. Nothing in the app links here:
@@ -54,7 +54,9 @@ export function AdminLogin() {
     >
       <div style={{ width: '100%', maxWidth: 400 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 13, marginBottom: 18 }}>
-          <Mark size={38} />
+          {/* On bone the badge takes the control-grey edge instead of the
+              hairline white that carries it on ink. */}
+          <BrandMark size={38} onDark={false} />
           <span
             style={{
               fontFamily: 'var(--display)',

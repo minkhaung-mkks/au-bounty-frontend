@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../api.js'
 import { useSession } from '../session.jsx'
-import { Icon, Mark } from '../components/ui.jsx'
+import { BrandMark, Icon } from '../components/ui.jsx'
 import { EmergencyBanner } from '../components/EmergencyBanner.jsx'
 import { ROLE_LABEL, initials, labelOf } from '../lib/format.js'
 import { useSocketEvent, useSocketSession } from '../lib/socket.js'
@@ -106,8 +106,10 @@ export function AppShell({ children }) {
     <div className="shell">
       <EmergencyBanner />
       <aside className="sidebar">
+        {/* The chest mark rides its white ground as a badge on the ink sidebar;
+            the wordmark stays text, so `hide-narrow` still has something to hide. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <Mark size={42} />
+          <BrandMark size={42} />
           <span
             className="hide-narrow"
             style={{

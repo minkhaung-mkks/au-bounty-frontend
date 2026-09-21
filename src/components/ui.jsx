@@ -1,4 +1,6 @@
 import { initials } from '../lib/format.js'
+import brandLockup from '../assets/logo.png'
+import brandMark from '../assets/logo-mark.png'
 
 export const Icon = ({ name, size = 20, color, style, className, ...rest }) => (
   // `ms` carries the icon font, so a caller's class has to merge with it, not
@@ -14,35 +16,54 @@ export const Icon = ({ name, size = 20, color, style, className, ...rest }) => (
 )
 
 /**
- * The AU seal: a red disc ringed in ink and gold. It appears in the sidebar,
- * on the login hero and above a public profile at three different sizes, so
- * the ring maths lives here rather than in three inline copies.
+ * The real brand, from the proposal cover. The source art is one square
+ * lockup on an opaque white ground — red AU, Bounty wordmark, chest mascot,
+ * tagline — so it is shown whole where there is room and cropped to the chest
+ * alone where a brand row is small. The white ground is never hidden: on ink
+ * and red surfaces it is framed as a deliberate badge, and the soft corner
+ * radius is the one courtesy the flat-square system makes to a picture that
+ * is not drawn in CSS.
  */
-export const Mark = ({ size = 42, onRed = false }) => (
-  <div
-    aria-hidden="true"
+
+/** The full square lockup. Carries the wordmark, so it stands alone. */
+export const BrandLockup = ({ size = 92 }) => (
+  <img
+    src={brandLockup}
+    alt="AU Bounty"
+    width={size}
+    height={size}
     style={{
-      width: size,
-      height: size,
-      borderRadius: '50%',
-      // On an ink surface the inner ring is ink; on the red hero it has to be
-      // bone, or the seal disappears into its own background.
-      background: onRed ? 'var(--red-dark)' : 'var(--red)',
-      boxShadow: onRed
-        ? `inset 0 0 0 ${Math.round(size * 0.08)}px var(--bone), inset 0 0 0 ${Math.round(size * 0.14)}px var(--gold)`
-        : `inset 0 0 0 ${Math.round(size * 0.072)}px var(--ink), inset 0 0 0 ${Math.round(size * 0.12)}px var(--gold)`,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
+      display: 'block',
       flex: '0 0 auto',
-      fontFamily: 'var(--display)',
-      fontWeight: 800,
-      fontSize: Math.round(size * 0.36),
-      color: '#fff',
+      background: '#fff',
+      borderRadius: Math.max(4, Math.round(size * 0.09)),
+      border: '1px solid rgba(255,255,255,.4)',
     }}
-  >
-    AU
-  </div>
+  />
+)
+
+/**
+ * The chest mascot on its white ground, for small brand rows. It always
+ * travels beside the "AU Bounty" wordmark text, so the image itself stays
+ * decorative (empty alt) rather than making screen readers say the name
+ * twice. `onDark` swaps the badge edge: hairline white against ink or red,
+ * the control-grey edge against paper.
+ */
+export const BrandMark = ({ size = 36, onDark = true }) => (
+  <img
+    src={brandMark}
+    alt=""
+    width={size}
+    height={size}
+    style={{
+      display: 'block',
+      flex: '0 0 auto',
+      background: '#fff',
+      borderRadius: Math.max(3, Math.round(size * 0.11)),
+      padding: Math.max(2, Math.round(size * 0.055)),
+      border: onDark ? '1px solid rgba(255,255,255,.28)' : '1px solid var(--line-control)',
+    }}
+  />
 )
 
 export const Avatar = ({ name, size = 40, dark = false }) => (

@@ -1,7 +1,7 @@
 import { Link, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { AppShell } from './layout/AppShell.jsx'
 import { useSession } from './session.jsx'
-import { Icon, Loading, Mark } from './components/ui.jsx'
+import { BrandMark, Icon, Loading } from './components/ui.jsx'
 
 import { Login } from './screens/Login.jsx'
 import { AdminLogin } from './screens/AdminLogin.jsx'
@@ -47,7 +47,7 @@ function PublicChrome({ children }) {
           gap: 14,
         }}
       >
-        <Mark size={36} />
+        <BrandMark size={36} />
         <span style={{ fontFamily: 'var(--display)', fontWeight: 800, fontSize: 17 }}>AU Bounty</span>
         <span style={{ marginLeft: 'auto', fontSize: 12.5, color: 'var(--muted-3)' }}>
           Public profile · no sign-in needed
