@@ -2,11 +2,11 @@
 FROM node:24-bookworm-slim AS builder
 WORKDIR /app
 
-# Browser key for the map picker + Places search: baked into the bundle at
-# build time by design (public, must be referrer-restricted in the Google
-# console). Pass with: --build-arg VITE_GOOGLE_MAPS_KEY=...
-ARG VITE_GOOGLE_MAPS_KEY
-ENV VITE_GOOGLE_MAPS_KEY=$VITE_GOOGLE_MAPS_KEY
+# The maps browser key bakes in from the tracked .env.production, which vite
+# loads in production mode. Deliberately NO ARG/ENV for it here: a real env
+# var beats env files in vite, so even an empty VITE_GOOGLE_MAPS_KEY would
+# shadow .env.production and silently strip the map picker and place search
+# from the bundle (this is exactly how the 2026-09-21 :main image broke).
 
 COPY package.json package-lock.json ./
 RUN npm ci
