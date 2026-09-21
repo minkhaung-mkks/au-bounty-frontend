@@ -936,6 +936,15 @@ select.field {
   color: #fff;
   padding: 3px 7px;
 }
+/* The emergency entry keeps its red accent at rest; under the active pill the
+   shared white-on-red takes over. */
+.nav-item.nav-emergency {
+  color: var(--red-soft-2);
+}
+.nav-item.nav-emergency:hover,
+.nav-item.nav-emergency.active {
+  color: #fff;
+}
 .nav-item.active .nav-badge {
   background: var(--ink);
 }

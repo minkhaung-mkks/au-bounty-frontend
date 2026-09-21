@@ -146,14 +146,15 @@ export function AppShell({ children }) {
           ))}
         </nav>
 
-        <button
-          className="btn btn-outline-dark btn-block"
-          style={{ color: 'var(--red-soft-2)', fontSize: 13 }}
-          onClick={() => navigate('/emergency')}
+        {/* A NavLink like the items above, so /emergency gets the same active
+            pill instead of a button that looks pressed nowhere. */}
+        <NavLink
+          to="/emergency"
+          className={({ isActive }) => `nav-item nav-emergency${isActive ? ' active' : ''}`}
         >
           <Icon name="emergency" size={18} />
-          <span className="hide-narrow">Emergency</span>
-        </button>
+          <span>Emergency</span>
+        </NavLink>
 
         <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div
