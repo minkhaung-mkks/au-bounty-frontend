@@ -70,8 +70,6 @@ All project documentation lives in the umbrella repo: [architecture](https://git
 
 Term project for **CSX4110 Backend Application Development (Section 542)** at Assumption University.
 
-| Developer | Student ID | Email |
-|---|---|---|
-| Sai Aike Shwe Tun Aung | 6712122 | u6712122@au.edu |
-| Min Khaung Kyaw Swar | 6712164 | u6712164@au.edu |
-| Ekaterina Kazakova | 6720065 | u6720065@au.edu |
+- Sai Aike Shwe Tun Aung
+- Min Khaung Kyaw Swar
+- Ekaterina Kazakova
